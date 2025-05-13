@@ -1,0 +1,3 @@
+# Allow users to modify hosts file for Steam changelog redirection
+ALL ALL=(root) NOPASSWD: /usr/bin/tee -a /etc/hosts
+ALL ALL=(root) NOPASSWD: /usr/bin/sed -i /127.0.0.1\ steamdeck-update.steampowered.com/d /etc/hosts

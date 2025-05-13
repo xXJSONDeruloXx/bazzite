@@ -1,0 +1,15 @@
+[Unit]
+Description=Bazzite Changelog Proxy Service
+After=network.target
+PartOf=steam.service
+StartLimitIntervalSec=500
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/bin/node /usr/libexec/bazzite-changelog-proxy
+
+[Install]
+WantedBy=steam.service

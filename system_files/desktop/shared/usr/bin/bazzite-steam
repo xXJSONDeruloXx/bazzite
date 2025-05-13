@@ -5,6 +5,38 @@ IMAGE_NAME=$(jq -r '."image-name"' < $IMAGE_INFO)
 
 DECK_OPTION=""
 
+# Set up changelog proxy redirection
+HOSTS_FILE="/etc/hosts"
+CHANGELOG_PROXY_ENTRY="127.0.0.1 steamdeck-update.steampowered.com"
+
+# Function to enable/disable host redirection
+setup_changelog_proxy() {
+  # Check if we should add or remove the entry
+  if [[ "$1" == "add" ]]; then
+    # Add the entry if it doesn't exist already
+    if ! grep -q "$CHANGELOG_PROXY_ENTRY" "$HOSTS_FILE"; then
+      echo "Enabling Bazzite changelog in Steam..."
+      echo "$CHANGELOG_PROXY_ENTRY" | sudo tee -a "$HOSTS_FILE" > /dev/null
+      # Also start the proxy service
+      systemctl --user enable --now bazzite-changelog-proxy.service
+    fi
+  elif [[ "$1" == "remove" ]]; then
+    # Remove the entry if it exists
+    if grep -q "$CHANGELOG_PROXY_ENTRY" "$HOSTS_FILE"; then
+      echo "Disabling Bazzite changelog in Steam..."
+      sudo sed -i "/$CHANGELOG_PROXY_ENTRY/d" "$HOSTS_FILE"
+      # Also stop the proxy service
+      systemctl --user stop bazzite-changelog-proxy.service
+    fi
+  fi
+}
+
+# Add the hosts entry before Steam starts
+setup_changelog_proxy "add"
+
+# Set a trap to ensure we clean up on exit
+trap 'setup_changelog_proxy "remove"' EXIT HUP INT TERM
+
 if [[ $IMAGE_NAME =~ "deck" || $IMAGE_NAME =~ "ally" ]]; then
   if [ ! -d $HOME/.local/share/Steam ]; then
     # Set up steam with the bootstrap before starting it, this allows steam to run for the first time even with no network access
