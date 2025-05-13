@@ -9,7 +9,7 @@ StartLimitBurst=5
 Type=simple
 Restart=on-failure
 RestartSec=5s
-ExecStart=/usr/bin/node /usr/libexec/bazzite-changelog-proxy
+ExecStart=/usr/bin/python3 /usr/libexec/bazzite-changelog-proxy.py
 
 [Install]
 WantedBy=steam.service
