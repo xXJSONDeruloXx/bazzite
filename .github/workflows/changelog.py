@@ -5,8 +5,10 @@ import time
 from typing import Any
 import re
 from collections import defaultdict
+import os
 
-REGISTRY = "docker://ghcr.io/ublue-os/"
+# Use environment variable for registry with a fallback to xXJSONDeruloXx
+REGISTRY = f"docker://ghcr.io/{os.environ.get('GITHUB_REPOSITORY_OWNER', 'xXJSONDeruloXx')}/"
 
 IMAGE_MATRIX = {
     "base": ["desktop", "deck", "nvidia-closed", "nvidia-open"],
@@ -37,7 +39,7 @@ OTHER_NAMES = {
 }
 
 COMMITS_FORMAT = "### Commits\n| Hash | Subject |\n| --- | --- |{commits}\n\n"
-COMMIT_FORMAT = "\n| **[{short}](https://github.com/ublue-os/bazzite/commit/{hash})** | {subject} |"
+COMMIT_FORMAT = "\n| **[{short}](https://github.com/{repo}/commit/{hash})** | {subject} |"
 
 CHANGELOG_TITLE = "{tag}: {pretty}"
 CHANGELOG_FORMAT = """\
@@ -285,6 +287,12 @@ def get_commits(prev_manifests, manifests, workdir: str):
         finish = next(iter(manifests.values()))["Labels"][
             "org.opencontainers.image.revision"
         ]
+        
+        # Get the repository from environment or use the repository from the image source URL
+        repo = os.environ.get('GITHUB_REPOSITORY', None)
+        if not repo:
+            source_url = next(iter(manifests.values()))["Labels"].get("org.opencontainers.image.source", "")
+            repo = source_url.replace("https://github.com/", "")
 
         commits = subprocess.run(
             [
@@ -312,6 +320,7 @@ def get_commits(prev_manifests, manifests, workdir: str):
                 COMMIT_FORMAT.replace("{short}", short)
                 .replace("{subject}", subject)
                 .replace("{hash}", hash)
+                .replace("{repo}", repo)
             )
 
         if out:
