@@ -1,5 +1,17 @@
 name: Build Bazzite ARM
+# This workflow builds the ARM version of Bazzite for Apple Silicon using Asahi Linux as a base
+# It can be triggered manually or by changes to specific branches/files
+
 on:
+  workflow_dispatch:
+    inputs:
+      handwritten:
+        description: 'Small changelog:'
+        required: false
+      fresh-rechunk:
+        description: 'Clear rechunk history'
+        type: boolean
+        default: false
   schedule:
     - cron: "40 5 * * 1" # 5:40 utc monday
   pull_request:
@@ -29,14 +41,6 @@ on:
       - "post_install_files/**"
       - "press_kit/**"
   merge_group:
-  workflow_dispatch:
-    inputs:
-      handwritten:
-        description: 'Small changelog:'
-      fresh-rechunk:
-        description: 'Clear rechunk history'
-        type: boolean
-        default: false
 
 env:
   PUSH_IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
