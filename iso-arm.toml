@@ -30,7 +30,11 @@ include = [
   "NetworkManager-wifi",
   "NetworkManager-bluetooth",
   "power-profiles-daemon",
-  "thermald"
+  "thermald",
+  "distrobox",
+  "podman",
+  "gnome-tweaks",
+  "gnome-extensions-app"
 ]
 
 # Optional - include RPM Fusion repositories

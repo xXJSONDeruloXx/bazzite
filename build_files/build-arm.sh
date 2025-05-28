@@ -35,7 +35,9 @@ dnf5 install -y --skip-broken --skip-unavailable \
   podman \
   dconf-editor \
   gnome-tweaks \
-  gnome-extensions-app
+  gnome-extensions-app \
+  NetworkManager-wifi \
+  NetworkManager-bluetooth
 
 # Note: asahi-audio is already included in the Fedora Asahi Remix base image
 # Note: apple-firmware-m1 is already included in the Fedora Asahi Remix base image
@@ -64,16 +66,28 @@ systemctl enable podman.socket || true
 systemctl enable power-profiles-daemon || true
 systemctl enable thermald || true
 
+# Setup apple-specific configurations
+# These settings help optimize power and performance on Apple Silicon
+echo "Setting up Apple Silicon specific configurations..."
+
+# Enable power-saving features
+mkdir -p /etc/systemd/system/power-profiles-daemon.service.d || true
+cat > /etc/systemd/system/power-profiles-daemon.service.d/override.conf << EOF
+[Service]
+ExecStartPre=/usr/bin/sleep 2
+EOF
+
 # Create image info
 mkdir -p /usr/share/ublue-os
 cat > /usr/share/ublue-os/image-info.json << EOF
 {
   "image-name": "${IMAGE_NAME:-bazzite-arm}",
-  "image-flavor": "arm64",
+  "image-flavor": "arm64-asahi",
   "image-vendor": "${IMAGE_VENDOR:-ublue-os}",
   "base-image-name": "${BASE_IMAGE_NAME:-silverblue}",
   "fedora-version": "${FEDORA_VERSION:-42}",
-  "arch": "aarch64"
+  "arch": "aarch64",
+  "description": "Bazzite for Apple Silicon - Built on Fedora Asahi Remix"
 }
 EOF
 
