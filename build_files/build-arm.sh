@@ -41,7 +41,9 @@ dnf5 install -y --setopt=priority=100 --repo=fedora,updates --skip-broken --skip
   gnome-tweaks \
   gnome-extensions-app \
   NetworkManager-wifi \
-  NetworkManager-bluetooth
+  NetworkManager-bluetooth \
+  just \
+  jq
 
 # Check if thermald is available and install it
 dnf5 list thermald &>/dev/null && dnf5 install -y thermald || echo "thermald package not available, skipping"
@@ -160,6 +162,116 @@ if systemctl list-unit-files | grep -q thermald.service; then
 else
   echo "thermald service not found, skipping enablement"
 fi
+
+# Set up the ujust system
+echo "Setting up the ujust system for ARM64..."
+
+# Create necessary directories
+mkdir -p /usr/lib/ujust
+mkdir -p /usr/share/ublue-os/just
+
+# Create the ujust.sh script
+cat > /usr/lib/ujust/ujust.sh << 'EOF'
+#!/bin/bash
+# ujust.sh - Basic shell utilities for Bazzite just scripts
+
+# Colors for terminal output
+export red='\033[0;31m'
+export green='\033[0;32m'
+export blue='\033[0;34m'
+export cyan='\033[0;36m'
+export yellow='\033[0;33m'
+export bold='\033[1m'
+export normal='\033[0m'
+
+# Simple function for displaying colorful status messages
+status() {
+    echo -e "${bold}${blue}:: ${normal}${bold}$1${normal}"
+}
+
+# Error message display
+error() {
+    echo -e "${bold}${red}Error: ${normal}${bold}$1${normal}" >&2
+}
+
+# Warning message display
+warning() {
+    echo -e "${bold}${yellow}Warning: ${normal}${bold}$1${normal}"
+}
+
+# Success message display
+success() {
+    echo -e "${bold}${green}Success: ${normal}${bold}$1${normal}"
+}
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Function to prompt for confirmation
+confirm() {
+    local prompt="$1"
+    local default="${2:-n}"
+    
+    if [[ "$default" == "y" ]]; then
+        local prompt_text="[Y/n]"
+    else
+        local prompt_text="[y/N]"
+    fi
+    
+    echo -e -n "${bold}${blue}:: ${normal}${bold}$prompt $prompt_text ${normal}"
+    read -r response
+    
+    if [[ -z "$response" ]]; then
+        response="$default"
+    fi
+    
+    case "$response" in
+        [yY][eE][sS]|[yY]) 
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Function to check if running as root
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error "This command must be run as root."
+        return 1
+    fi
+    return 0
+}
+EOF
+
+chmod +x /usr/lib/ujust/ujust.sh
+
+# Create the ujust command wrapper
+cat > /usr/bin/ujust << 'EOF'
+#!/bin/bash
+# ujust - User-friendly wrapper for the just command
+
+# Set the just directory path
+JUST_DIR="/usr/share/ublue-os"
+
+# Change to the just directory
+cd "$JUST_DIR" || { echo "Error: Cannot access $JUST_DIR"; exit 1; }
+
+# If no arguments, list available recipes
+if [ $# -eq 0 ]; then
+    echo "Available commands:"
+    just --list
+    exit 0
+fi
+
+# Forward all arguments to just
+exec just "$@"
+EOF
+
+chmod +x /usr/bin/ujust
 
 # Setup apple-specific configurations
 # These settings help optimize power and performance on Apple Silicon
