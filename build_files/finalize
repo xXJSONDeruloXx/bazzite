@@ -2,11 +2,41 @@
 
 set -eoux pipefail
 
+# Clean up package caches
 dnf5 clean all
-rm -rf /tmp/* || true
-find /var/* -maxdepth 0 -type d \! -name cache -exec rm -fr {} \;
-find /var/cache/* -maxdepth 0 -type d \! -name libdnf5 \! -name rpm-ostree -exec rm -fr {} \;
-mkdir -p /var/tmp
-chmod -R 1777 /var/tmp
 
+# Clean up temporary files
+rm -rf /tmp/* || true
+
+# Properly manage /var directory with systemd tmpfiles
+# First, create the necessary tmpfiles.d configuration
+mkdir -p /usr/lib/tmpfiles.d
+
+# Create configuration for /var/tmp
+cat > /usr/lib/tmpfiles.d/var-tmp.conf << EOF
+# Ensure /var/tmp exists with proper permissions
+d /var/tmp 1777 root root -
+EOF
+
+# Create configuration for other /var directories
+cat > /usr/lib/tmpfiles.d/var-dirs.conf << EOF
+# Ensure important /var directories exist with proper permissions
+d /var/cache 0755 root root -
+d /var/log 0755 root root -
+d /var/lib 0755 root root -
+d /var/spool 0755 root root -
+EOF
+
+# Ensure /var/tmp exists with proper permissions
+mkdir -p /var/tmp
+chmod 1777 /var/tmp
+
+# Clean up /var safely while keeping essential directories
+find /var/* -maxdepth 0 -type d \! -name cache \! -name tmp \! -name log \! -name lib \! -name spool -exec rm -fr {} \;
+find /var/cache/* -maxdepth 0 -type d \! -name libdnf5 \! -name rpm-ostree -exec rm -fr {} \;
+
+# Run systemd-tmpfiles to ensure all tmpfiles are correctly set up
+systemd-tmpfiles --create || echo "systemd-tmpfiles failed, but continuing anyway"
+
+# Commit the container
 ostree container commit

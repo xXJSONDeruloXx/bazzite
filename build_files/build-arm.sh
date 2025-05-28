@@ -22,14 +22,18 @@ dnf5 update -y --refresh
 # Install essential packages for Apple Silicon hardware 
 # Using --skip-broken and --skip-unavailable to handle package availability issues
 # Note: asahi-audio, apple-firmware-m1, and asahi-scripts are already included in the base image
-dnf5 install -y --skip-broken --skip-unavailable \
+
+# First, remove conflicting tuned-ppd package to allow power-profiles-daemon installation
+dnf5 remove -y tuned-ppd || true
+
+# Install packages with priority options to prefer regular Fedora packages over Asahi's when possible
+dnf5 install -y --setopt=priority=100 --repo=fedora,updates --skip-broken --skip-unavailable \
   tmux \
   vim \
   htop \
   git \
   powertop \
   power-profiles-daemon \
-  thermald \
   firefox \
   distrobox \
   podman \
@@ -39,32 +43,123 @@ dnf5 install -y --skip-broken --skip-unavailable \
   NetworkManager-wifi \
   NetworkManager-bluetooth
 
+# Check if thermald is available and install it
+dnf5 list thermald &>/dev/null && dnf5 install -y thermald || echo "thermald package not available, skipping"
+
 # Note: asahi-audio is already included in the Fedora Asahi Remix base image
 # Note: apple-firmware-m1 is already included in the Fedora Asahi Remix base image
 # Note: asahi-scripts is already included in the Fedora Asahi Remix base image
 
 # Enable Bazzite COPRs
-dnf5 -y copr enable ublue-os/bling || true
-dnf5 -y install --skip-broken --skip-unavailable ublue-os-bling || true
-dnf5 -y copr enable ublue-os/staging || true
-dnf5 -y install --skip-broken --skip-unavailable ublue-update || true
+echo "Attempting to enable ublue-os/bling COPR repository..."
+if dnf5 -y copr enable ublue-os/bling; then
+    echo "Successfully enabled ublue-os/bling"
+    dnf5 -y install --skip-broken --skip-unavailable ublue-os-bling || echo "ublue-os-bling package not available for ARM64"
+else
+    echo "Failed to enable ublue-os/bling COPR repository for ARM64"
+    # Create a placeholder for ublue-os-bling to prevent dependencies from failing
+    mkdir -p /usr/share/ublue-os/bling
+    touch /usr/share/ublue-os/bling/README.md
+    echo "This is a placeholder for ublue-os-bling which is not available for ARM64" > /usr/share/ublue-os/bling/README.md
+fi
+
+echo "Attempting to enable ublue-os/staging COPR repository..."
+if dnf5 -y copr enable ublue-os/staging; then
+    echo "Successfully enabled ublue-os/staging"
+    dnf5 -y install --skip-broken --skip-unavailable ublue-update || echo "ublue-update package not available for ARM64"
+else
+    echo "Failed to enable ublue-os/staging COPR repository for ARM64"
+    # Create a placeholder for ublue-update
+    mkdir -p /usr/bin
+    cat > /usr/bin/ublue-update << 'EOF'
+#!/bin/bash
+echo "ublue-update is not available for ARM64, this is a placeholder script"
+echo "Running system update instead"
+rpm-ostree update
+EOF
+    chmod +x /usr/bin/ublue-update
+fi
 
 # Enable gaming-related packages (where available for ARM64)
 dnf5 -y install --skip-broken --skip-unavailable mangohud gamescope
 
 # Add Flatpak repository and install basic apps
+# Configure Flatpak to work properly in container builds
+mkdir -p /var/roothome || true
+echo "kernel.unprivileged_userns_clone=1" > /etc/sysctl.d/flatpak.conf
+
+# Add Flatpak remotes
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || true
 flatpak remote-add --if-not-exists fedora oci+https://registry.fedoraproject.org || true
 
 # Install essential Flatpaks
-flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal || true
-flatpak install -y --noninteractive flathub com.mattjakeman.ExtensionManager || true
-flatpak install -y --noninteractive flathub org.mozilla.firefox || true
+# Using --system to ensure system-wide installation
+# Adding environment variables to help with sandbox issues
+export FLATPAK_SYSTEM_DIR=/var/lib/flatpak
+export FLATPAK_SYSTEM_HELPER_ON_SESSION=1
 
-# Enable system services
-systemctl enable podman.socket || true
-systemctl enable power-profiles-daemon || true
-systemctl enable thermald || true
+# Install Flatpaks with error handling
+echo "Installing Flatseal..."
+flatpak install -y --noninteractive --system flathub com.github.tchx84.Flatseal || echo "Failed to install Flatseal, will be installed on first boot"
+
+echo "Installing Extension Manager..."
+flatpak install -y --noninteractive --system flathub com.mattjakeman.ExtensionManager || echo "Failed to install Extension Manager, will be installed on first boot"
+
+echo "Installing Firefox..."
+flatpak install -y --noninteractive --system flathub org.mozilla.firefox || echo "Failed to install Firefox, will be installed on first boot"
+
+# Create script to install Flatpaks on first boot
+mkdir -p /usr/lib/bazzite/scripts
+cat > /usr/lib/bazzite/scripts/install-flatpaks.sh << 'EOF'
+#!/bin/bash
+# Install essential Flatpaks on first boot if they failed during build
+echo "Checking and installing essential Flatpaks..."
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal
+flatpak install -y --noninteractive flathub com.mattjakeman.ExtensionManager
+flatpak install -y --noninteractive flathub org.mozilla.firefox
+EOF
+chmod +x /usr/lib/bazzite/scripts/install-flatpaks.sh
+
+# Create a systemd service to run the script on first boot
+mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/bazzite-first-boot-flatpaks.service << 'EOF'
+[Unit]
+Description=Install essential Flatpaks on first boot
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/bazzite/flatpaks-installed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/bazzite/scripts/install-flatpaks.sh
+ExecStartPost=/usr/bin/mkdir -p /var/lib/bazzite
+ExecStartPost=/usr/bin/touch /var/lib/bazzite/flatpaks-installed
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable the service
+systemctl enable bazzite-first-boot-flatpaks.service || true
+
+# Enable system services with error handling
+echo "Enabling system services..."
+systemctl enable podman.socket || echo "Failed to enable podman.socket"
+
+# Check if power-profiles-daemon service exists before enabling
+if systemctl list-unit-files | grep -q power-profiles-daemon.service; then
+  systemctl enable power-profiles-daemon || echo "Failed to enable power-profiles-daemon"
+else
+  echo "power-profiles-daemon service not found, skipping enablement"
+fi
+
+# Check if thermald service exists before enabling
+if systemctl list-unit-files | grep -q thermald.service; then
+  systemctl enable thermald || echo "Failed to enable thermald"
+else
+  echo "thermald service not found, skipping enablement"
+fi
 
 # Setup apple-specific configurations
 # These settings help optimize power and performance on Apple Silicon

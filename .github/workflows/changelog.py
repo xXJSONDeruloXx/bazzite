@@ -7,8 +7,8 @@ import re
 from collections import defaultdict
 import os
 
-# Use environment variable for registry with a fallback to xXJSONDeruloXx
-REGISTRY = f"docker://ghcr.io/{os.environ.get('GITHUB_REPOSITORY_OWNER', 'xXJSONDeruloXx')}/"
+# Use environment variable for registry with a fallback to xxjsonderuloxx
+REGISTRY = f"docker://ghcr.io/{os.environ.get('GITHUB_REPOSITORY_OWNER', 'xxjsonderuloxx')}/"
 
 IMAGE_MATRIX = {
     "base": ["desktop", "deck", "nvidia-closed", "nvidia-open"],
