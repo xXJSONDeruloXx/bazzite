@@ -171,7 +171,9 @@ jobs:
         run: |
           IMAGE_FULL="${{ steps.registry_case.outputs.lowercase }}/${{ steps.image_case.outputs.lowercase }}"
           for tag in ${{ steps.metadata.outputs.tags }}; do
-            cosign sign -y --key env://COSIGN_PRIVATE_KEY $IMAGE_FULL:$tag
+            # Extract just the tag part from the full tag reference
+            TAG_ONLY=$(echo "$tag" | cut -d':' -f2)
+            cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_FULL}:${TAG_ONLY}"
           done
         env:
           TAGS: ${{ steps.push.outputs.digest }}
