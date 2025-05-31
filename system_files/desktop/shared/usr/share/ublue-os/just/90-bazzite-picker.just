@@ -251,8 +251,9 @@ pick:
                     recipe_text="${recipe_text:0:$((content_width-prefix_length-3))}..."
                 fi
                 
-                # Print with highlight and precise padding to right edge
-                printf "│ ${cyan}${bold}▶ %-$((content_width-prefix_length))s${normal}│\n" "$recipe_text"
+                # Print selected recipe with adjusted padding to account for color codes
+                # Add additional space at the end to ensure right border alignment
+                printf "│ ${cyan}${bold}▶ %-$((content_width-prefix_length))s${normal}  │\n" "$recipe_text"
             else
                 # Truncate if necessary to fit in box
                 if [ ${#recipe_text} -gt $((content_width - prefix_length)) ]; then
