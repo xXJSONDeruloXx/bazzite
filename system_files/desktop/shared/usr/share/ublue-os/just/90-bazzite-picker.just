@@ -10,6 +10,7 @@ pick:
     
     # Define constants
     WINDOW_WIDTH=75  # Total width of the UI window (inside borders)
+    BOX_WIDTH=$((WINDOW_WIDTH))  # Width for border lines
     
     echo "${bold}Available ujust recipes:${normal}"
     echo "Use arrow keys to navigate, Enter to select, Esc to exit"
@@ -40,6 +41,12 @@ pick:
         else
             echo "$text"
         fi
+    }
+    
+    # Function to create a horizontal border line
+    create_border() {
+        local char="$1"
+        printf "%s%${BOX_WIDTH}s%s\n" "│" "" "│" | tr ' ' "$char"
     }
     
     # Process each file to create categorized recipe files
@@ -155,21 +162,28 @@ pick:
     # Function to draw tabs
     draw_tabs() {
         local tab_index=$1
-        local available_width=$((WINDOW_WIDTH - 4))  # Account for borders and spacing
-        local tab_line=""
-        local max_tab_width
         
-        # Calculate max width per tab to fit all tabs
-        max_tab_width=$((available_width / ${#categories[@]} - 3))  # -3 for " | " separators
+        # Calculate max tab width to ensure all tabs fit
+        local separator_space=3  # Space taken by " | "
+        local total_separator_space=$(( (${#categories[@]} - 1) * separator_space ))
+        local max_tab_width=$(( (WINDOW_WIDTH - total_separator_space - 4) / ${#categories[@]} ))
+        if [ $max_tab_width -lt 3 ]; then
+            max_tab_width=3  # Minimum width to avoid empty tabs
+        fi
         
-        # Top border
-        printf "┌───%s┐\n" "$(printf '─%.0s' $(seq 1 $WINDOW_WIDTH))"
+        # Draw top border with correct width
+        echo "┌$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┐"
         
-        # Tab line
+        # Tab line with proper padding
         echo -n "│ "
         
         for i in "${!categories[@]}"; do
-            local tab_text=$(truncate_text "${categories[$i]}" $max_tab_width)
+            local tab_text="${categories[$i]}"
+            
+            # Truncate if necessary
+            if [ ${#tab_text} -gt $max_tab_width ]; then
+                tab_text="${tab_text:0:$((max_tab_width-3))}..."
+            fi
             
             if [ $i -eq $tab_index ]; then
                 echo -ne "${green}${bold}${tab_text}${normal}"
@@ -184,15 +198,29 @@ pick:
         done
         
         # Calculate padding to reach right edge
-        local current_length=${#tab_line}
-        local padding=$((WINDOW_WIDTH - current_length))
-        printf "%${padding}s" " "
-        echo " │"
+        local current_pos=$(echo -n "│ " | wc -c)
+        for i in "${!categories[@]}"; do
+            local tab_text="${categories[$i]}"
+            if [ ${#tab_text} -gt $max_tab_width ]; then
+                current_pos=$((current_pos + max_tab_width))
+            else
+                current_pos=$((current_pos + ${#tab_text}))
+            fi
+            
+            # Add separator length
+            if [ $i -lt $((${#categories[@]} - 1)) ]; then
+                current_pos=$((current_pos + 3))  # " | " = 3 chars
+            fi
+        done
+        
+        # Add padding to right edge
+        local padding=$((BOX_WIDTH + 2 - current_pos))
+        printf "%${padding}s│\n" ""
         
         # Tab navigation hint
-        printf "├───%s┤\n" "$(printf '─%.0s' $(seq 1 $WINDOW_WIDTH))"
-        echo "│ ← → Change Category | ↑ ↓ Navigate Recipes | Enter: Select | Esc: Exit      │"
-        printf "├───%s┤\n" "$(printf '─%.0s' $(seq 1 $WINDOW_WIDTH))"
+        echo "├$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┤"
+        printf "│ %-${BOX_WIDTH}s │\n" "← → Change Category | ↑ ↓ Navigate Recipes | Enter: Select | Esc: Exit"
+        echo "├$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┤"
     }
     
     # Function to display recipes
@@ -201,34 +229,49 @@ pick:
         local recipe_index=$2
         local cat_file="${category_files[$tab_index]}"
         local recipes=()
-        local content_width=$((WINDOW_WIDTH - 6))  # Account for "│   " prefix and margin
+        local content_width=$((BOX_WIDTH - 2))  # Available width for content
         
         # Read recipes into array
         while IFS= read -r line; do
             recipes+=("$line")
         done < "$cat_file"
         
-        # Display recipes
+        # Display recipes with proper alignment
         for i in "${!recipes[@]}"; do
-            local truncated_recipe=$(truncate_text "${recipes[$i]}" $content_width)
+            local recipe_text="${recipes[$i]}"
+            local prefix_length=3  # "│   " = 4 chars
             
             if [ $i -eq $recipe_index ]; then
-                printf "│ ${cyan}${bold}▶ %-${content_width}s${normal} │\n" "$truncated_recipe"
+                prefix_length=5  # "│ ▶ " = 6 chars (arrow takes 2 visual spaces)
+                
+                # Truncate if necessary to fit in box
+                if [ ${#recipe_text} -gt $((content_width - prefix_length)) ]; then
+                    recipe_text="${recipe_text:0:$((content_width-prefix_length-3))}..."
+                fi
+                
+                # Print with precise padding to match right border
+                printf "│ ${cyan}${bold}▶ %-$((content_width-prefix_length+1))s${normal}│\n" "$recipe_text"
             else
-                printf "│   %-${content_width}s │\n" "$truncated_recipe"
+                # Truncate if necessary to fit in box
+                if [ ${#recipe_text} -gt $((content_width - prefix_length)) ]; then
+                    recipe_text="${recipe_text:0:$((content_width-prefix_length-3))}..."
+                fi
+                
+                # Print with precise padding to match right border
+                printf "│   %-$((content_width-prefix_length+1))s│\n" "$recipe_text"
             fi
         done
         
         # Add padding if there are few recipes
-        local lines_needed=$((10 - ${#recipes[@]}))
-        if [ $lines_needed -gt 0 ]; then
-            for ((i=0; i<$lines_needed; i++)); do
-                printf "│ %-${WINDOW_WIDTH}s │\n" " "
+        local min_lines=10
+        if [ ${#recipes[@]} -lt $min_lines ]; then
+            for ((i=${#recipes[@]}; i<$min_lines; i++)); do
+                printf "│%-${BOX_WIDTH}s│\n" ""
             done
         fi
         
         # Bottom border
-        printf "└───%s┘\n" "$(printf '─%.0s' $(seq 1 $WINDOW_WIDTH))"
+        echo "└$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┘"
     }
     
     # Main UI Loop
