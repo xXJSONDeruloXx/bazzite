@@ -163,59 +163,61 @@ pick:
     draw_tabs() {
         local tab_index=$1
         
-        # Calculate max tab width to ensure all tabs fit
-        local separator_space=3  # Space taken by " | "
-        local total_separator_space=$(( (${#categories[@]} - 1) * separator_space ))
-        local max_tab_width=$(( (WINDOW_WIDTH - total_separator_space - 4) / ${#categories[@]} ))
-        if [ $max_tab_width -lt 3 ]; then
-            max_tab_width=3  # Minimum width to avoid empty tabs
-        fi
-        
         # Draw top border with correct width
         echo "┌$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┐"
         
-        # Tab line with proper padding
-        echo -n "│ "
+        # Create the category navigation line
+        local line=""
+        local prev_category=""
+        local next_category=""
         
-        for i in "${!categories[@]}"; do
-            local tab_text="${categories[$i]}"
-            
-            # Truncate if necessary
-            if [ ${#tab_text} -gt $max_tab_width ]; then
-                tab_text="${tab_text:0:$((max_tab_width-3))}..."
-            fi
-            
-            if [ $i -eq $tab_index ]; then
-                echo -ne "${green}${bold}${tab_text}${normal}"
-            else
-                echo -n "$tab_text"
-            fi
-            
-            # Add separator between tabs
-            if [ $i -lt $((${#categories[@]} - 1)) ]; then
-                echo -n " | "
-            fi
-        done
+        # Get previous category
+        if [ $tab_index -gt 0 ]; then
+            prev_category="← ${categories[$((tab_index-1))]}"
+        fi
         
-        # Calculate padding to reach right edge
-        local current_pos=$(echo -n "│ " | wc -c)
-        for i in "${!categories[@]}"; do
-            local tab_text="${categories[$i]}"
-            if [ ${#tab_text} -gt $max_tab_width ]; then
-                current_pos=$((current_pos + max_tab_width))
-            else
-                current_pos=$((current_pos + ${#tab_text}))
-            fi
-            
-            # Add separator length
-            if [ $i -lt $((${#categories[@]} - 1)) ]; then
-                current_pos=$((current_pos + 3))  # " | " = 3 chars
-            fi
-        done
+        # Get next category
+        if [ $tab_index -lt $((${#categories[@]}-1)) ]; then
+            next_category="${categories[$((tab_index+1))]} →"
+        fi
         
-        # Add padding to right edge
-        local padding=$((BOX_WIDTH + 2 - current_pos))
-        printf "%${padding}s│\n" ""
+        # Current category with highlighting
+        local current="${green}${bold}${categories[$tab_index]}${normal}"
+        
+        # Calculate spaces for centering
+        local current_length=${#categories[$tab_index]}
+        local prev_length=${#prev_category}
+        local next_length=${#next_category}
+        
+        # Total content length without ANSI codes
+        local content_length=$((prev_length + current_length + next_length))
+        
+        # Calculate padding
+        local left_padding=$(( (BOX_WIDTH - content_length) / 2 ))
+        if [ $left_padding -lt 0 ]; then left_padding=0; fi
+        
+        # Ensure minimum spacing between elements
+        local spacer="   "
+        
+        # Build the line with proper spacing
+        printf "│%${left_padding}s" "" # Left padding
+        
+        if [ -n "$prev_category" ]; then
+            printf "%s%s" "$prev_category" "$spacer"
+        fi
+        
+        printf "%s" "$current"
+        
+        if [ -n "$next_category" ]; then
+            printf "%s%s" "$spacer" "$next_category"
+        fi
+        
+        # Calculate remaining space to align right border
+        local used=$((left_padding + prev_length + ${#spacer} + current_length + ${#spacer} + next_length))
+        local right_padding=$((BOX_WIDTH - used))
+        if [ $right_padding -lt 0 ]; then right_padding=0; fi
+        
+        printf "%${right_padding}s│\n" ""
         
         # Tab navigation hint
         echo "├$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┤"
@@ -229,7 +231,7 @@ pick:
         local recipe_index=$2
         local cat_file="${category_files[$tab_index]}"
         local recipes=()
-        local content_width=$((BOX_WIDTH - 2))  # Available width for content
+        local content_width=$((BOX_WIDTH))  # Available width for content
         
         # Read recipes into array
         while IFS= read -r line; do
@@ -249,16 +251,16 @@ pick:
                     recipe_text="${recipe_text:0:$((content_width-prefix_length-3))}..."
                 fi
                 
-                # Print with precise padding to match right border
-                printf "│ ${cyan}${bold}▶ %-$((content_width-prefix_length+1))s${normal}│\n" "$recipe_text"
+                # Print with highlight and precise padding to right edge
+                printf "│ ${cyan}${bold}▶ %-$((content_width-prefix_length))s${normal}│\n" "$recipe_text"
             else
                 # Truncate if necessary to fit in box
                 if [ ${#recipe_text} -gt $((content_width - prefix_length)) ]; then
                     recipe_text="${recipe_text:0:$((content_width-prefix_length-3))}..."
                 fi
                 
-                # Print with precise padding to match right border
-                printf "│   %-$((content_width-prefix_length+1))s│\n" "$recipe_text"
+                # Print with precise padding to right edge
+                printf "│   %-$((content_width-prefix_length))s│\n" "$recipe_text"
             fi
         done
         
