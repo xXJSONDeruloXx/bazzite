@@ -277,6 +277,91 @@ pick:
         echo "└$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┘"
     }
     
+    # Function to display detailed information about the selected recipe
+    display_recipe_details() {
+        local tab_index=$1
+        local recipe_index=$2
+        local cat_file="${category_files[$tab_index]}"
+        local recipes=()
+        
+        # Read recipes into array
+        while IFS= read -r line; do
+            recipes+=("$line")
+        done < "$cat_file"
+        
+        # Check if we have recipes and the index is valid
+        if [ ${#recipes[@]} -eq 0 ] || [ $recipe_index -lt 0 ] || [ $recipe_index -ge ${#recipes[@]} ]; then
+            return
+        fi
+        
+        local selected="${recipes[$recipe_index]}"
+        
+        # Extract recipe name and description
+        local recipe_name=$(echo "$selected" | cut -d ' ' -f1)
+        local description=$(echo "$selected" | sed 's/^[^ ]* - //')
+        
+        # Draw the details box
+        echo "┌$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┐"
+        printf "│ ${bold}Selected: ${green}%s${normal}%-$((BOX_WIDTH-12-${#recipe_name}))s│\n" "$recipe_name" ""
+        echo "├$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┤"
+        
+        # Handle empty description
+        if [ -z "$description" ] || [ "$description" = "$recipe_name" ]; then
+            printf "│ %-${BOX_WIDTH}s│\n" "No description available."
+            echo "└$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┘"
+            return
+        fi
+        
+        # Word wrap the description to fit inside the box
+        local max_line_width=$((BOX_WIDTH - 2))  # Account for borders and padding
+        local start=0
+        local desc_length=${#description}
+        local line_count=0
+        
+        while [ $start -lt $desc_length ]; do
+            # Try to fit as much text as possible in one line
+            local end=$((start + max_line_width))
+            if [ $end -gt $desc_length ]; then
+                end=$desc_length
+            else
+                # Find the last space before the line wraps
+                while [ $end -gt $start ] && [ "${description:$end:1}" != " " ]; do
+                    end=$((end - 1))
+                done
+                
+                # If no space found, just cut at max length
+                if [ $end -eq $start ]; then
+                    end=$((start + max_line_width))
+                    if [ $end -gt $desc_length ]; then
+                        end=$desc_length
+                    fi
+                fi
+            fi
+            
+            # Print the line with padding
+            printf "│ %-${BOX_WIDTH}s│\n" "${description:$start:$((end-start))}"
+            line_count=$((line_count + 1))
+            
+            # Move to next line
+            start=$((end + 1))
+            
+            # Skip leading spaces on next line
+            while [ $start -lt $desc_length ] && [ "${description:$start:1}" = " " ]; do
+                start=$((start + 1))
+            done
+        done
+        
+        # Ensure minimum height
+        local min_lines=3
+        if [ $line_count -lt $min_lines ]; then
+            for ((i=line_count; i<$min_lines; i++)); do
+                printf "│%-${BOX_WIDTH}s│\n" ""
+            done
+        fi
+        
+        echo "└$(printf '─%.0s' $(seq 1 $BOX_WIDTH))┘"
+    }
+    
     # Main UI Loop
     while true; do
         clear
@@ -300,6 +385,12 @@ pick:
         # Draw UI
         draw_tabs "$current_tab"
         display_recipes "$current_tab" "$current_recipe"
+        
+        # Show detailed information about the selected recipe
+        if [ ${#recipes[@]} -gt 0 ]; then
+            echo
+            display_recipe_details "$current_tab" "$current_recipe"
+        fi
         
         # Get keystroke
         read -s -n 1 key
