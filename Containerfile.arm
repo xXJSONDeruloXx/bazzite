@@ -48,9 +48,11 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
-    chmod +x /ctx/build-arm.sh /ctx/setup-x86-emulation.sh && \
-    /ctx/build-arm.sh && \
-    /ctx/setup-x86-emulation.sh && \
+    cp /ctx/build-arm.sh /tmp/ && \
+    cp /ctx/setup-x86-emulation.sh /tmp/ && \
+    chmod +x /tmp/build-arm.sh /tmp/setup-x86-emulation.sh && \
+    /tmp/build-arm.sh && \
+    /tmp/setup-x86-emulation.sh && \
     mkdir -p /usr/share/ublue-os && \
     touch /usr/share/ublue-os/justfile && \
     echo "import \"/usr/share/ublue-os/just/80-bazzite.just\"" >> /usr/share/ublue-os/justfile && \
