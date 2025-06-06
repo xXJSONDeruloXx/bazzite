@@ -51,7 +51,7 @@ concurrency:
 jobs:
   push-ghcr:
     name: Make
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     continue-on-error: false
     permissions:
       contents: read
@@ -66,6 +66,7 @@ jobs:
         target_image_flavor: [main, asus, surface]
         target_nvidia_flavor: [nvidia, nvidia-open]
         fedora_version: [42]
+        platform: [linux/amd64, linux/arm64]
         include:
           - fedora_version: 42
             is_latest_version: true
@@ -88,6 +89,15 @@ jobs:
             target_image_flavor: surface
           - target_image_flavor: surface
             target_nvidia_flavor: nvidia
+          # ARM-specific exclusions - no NVIDIA support on ARM
+          - platform: linux/arm64
+            base_name: bazzite-nvidia
+          - platform: linux/arm64
+            base_name: bazzite-deck-nvidia
+          - platform: linux/arm64
+            target_nvidia_flavor: nvidia
+          - platform: linux/arm64
+            target_nvidia_flavor: nvidia-open
     steps:
       - name: Define env.CONTAINER_TARGET
         run: |
@@ -116,19 +126,24 @@ jobs:
               DESKTOP="-gnome"
           fi
 
+          ARCH_SUFFIX=""
+          if [[ "${{ matrix.platform }}" == "linux/arm64" ]]; then
+              ARCH_SUFFIX="-arm"
+          fi
+
           if [[ "${{ matrix.base_name }}" == "bazzite-deck" ]]; then
               if [[ "${{ matrix.target_image_flavor }}" == "asus" ]]; then
-                  echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite-ally', '${DESKTOP}') }}" >> $GITHUB_ENV
+                  echo "IMAGE_NAME=${{ format('{0}{1}{2}', 'bazzite-ally', '${DESKTOP}', '${ARCH_SUFFIX}') }}" >> $GITHUB_ENV
               else
-                  echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite-deck', '${DESKTOP}') }}" >> $GITHUB_ENV
+                  echo "IMAGE_NAME=${{ format('{0}{1}{2}', 'bazzite-deck', '${DESKTOP}', '${ARCH_SUFFIX}') }}" >> $GITHUB_ENV
               fi
           elif [[ "${{ matrix.base_name }}" == "bazzite-deck-nvidia" ]]; then
-              echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite-deck-nvidia', '${DESKTOP}') }}" >> $GITHUB_ENV
+              echo "IMAGE_NAME=${{ format('{0}{1}{2}', 'bazzite-deck-nvidia', '${DESKTOP}', '${ARCH_SUFFIX}') }}" >> $GITHUB_ENV
           else
               if [[ "${{ env.IMAGE_FLAVOR }}" == "main" ]]; then
-                  echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite', '${DESKTOP}') }}" >> $GITHUB_ENV
+                  echo "IMAGE_NAME=${{ format('{0}{1}{2}', 'bazzite', '${DESKTOP}', '${ARCH_SUFFIX}') }}" >> $GITHUB_ENV
               else
-                  echo "IMAGE_NAME=${{ format('{0}{1}-{2}', 'bazzite', '${DESKTOP}', env.IMAGE_FLAVOR) }}" >> $GITHUB_ENV
+                  echo "IMAGE_NAME=${{ format('{0}{1}-{2}{3}', 'bazzite', '${DESKTOP}', env.IMAGE_FLAVOR, '${ARCH_SUFFIX}') }}" >> $GITHUB_ENV
               fi
           fi
 
@@ -144,6 +159,18 @@ jobs:
         run: |
           echo "SHA_HEAD_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
+      - name: Set up Docker Buildx (for multi-platform builds)
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Set up QEMU (for ARM emulation on x86)
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
+        with:
+          platforms: linux/arm64
+
       - name: Verify main image
         uses: EyeCantCU/cosign-action/verify@58722a084c82190b57863002d494c91eabbe9e79 # v0.3.0
         with:
@@ -152,6 +179,7 @@ jobs:
           registry: ${{ env.PULL_IMAGE_REGISTRY }}
 
       - name: Verify akmods image
+        if: matrix.platform != 'linux/arm64'
         uses: EyeCantCU/cosign-action/verify@58722a084c82190b57863002d494c91eabbe9e79 # v0.3.0
         with:
           containers: akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
@@ -159,6 +187,7 @@ jobs:
           registry: ${{ env.PULL_IMAGE_REGISTRY }}
 
       - name: Verify akmods-nvidia image
+        if: matrix.platform != 'linux/arm64'
         uses: EyeCantCU/cosign-action/verify@58722a084c82190b57863002d494c91eabbe9e79 # v0.3.0
         with:
           containers: akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
@@ -207,8 +236,12 @@ jobs:
             # pull the base images used for FROM in Containerfile so
             # we can retry on that unfortunately common failure case
             sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
-            sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
-            sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+            
+            # Only pull akmods images for x86 builds
+            if [[ "${{ matrix.platform }}" != "linux/arm64" ]]; then
+              sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+              sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+            fi
 
             # Add rechunk as well to remove this source of failure
             sudo podman pull ghcr.io/hhd-dev/rechunk:v1.2.2
@@ -281,6 +314,7 @@ jobs:
           SHA_HEAD_SHORT=${{ env.SHA_HEAD_SHORT }}
           VERSION_TAG=${{ steps.generate-version.outputs.tag }}
           VERSION_PRETTY=${{ steps.generate-version.outputs.pretty }}
+          TARGETPLATFORM=${{ matrix.platform }}
           EOF
 
       # Build image using buildah and save it to raw-img
@@ -296,8 +330,12 @@ jobs:
         # We are tight on space, need at least 2x for OSTree
         run: |
           sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
-          sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
-          sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+          
+          # Only remove akmods images for x86 builds
+          if [[ "${{ matrix.platform }}" != "linux/arm64" ]]; then
+            sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+            sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+          fi
       
       # Generate the previous image reference used by the Rechunker
       - name: Generate previous reference
@@ -316,6 +354,7 @@ jobs:
           cat $GITHUB_OUTPUT
 
       - name: Check Secureboot
+        if: matrix.platform != 'linux/arm64'
         shell: bash
         run: |
           set -x

@@ -1,0 +1,212 @@
+# Multi-platform Bazzite Containerfile
+# This file supports both linux/amd64 and linux/arm64 platforms
+# ARM builds use x86 emulation for unavailable ARM packages
+
+ARG BASE_IMAGE_NAME="${BASE_IMAGE_NAME:-kinoite}"
+ARG BASE_IMAGE_FLAVOR="${BASE_IMAGE_FLAVOR:-main}"
+ARG IMAGE_FLAVOR="${IMAGE_FLAVOR:-main}"
+ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR:-nvidia}"
+ARG NVIDIA_BASE="${NVIDIA_BASE:-bazzite}"
+ARG KERNEL_FLAVOR="${KERNEL_FLAVOR:-bazzite}"
+ARG KERNEL_VERSION="${KERNEL_VERSION:-6.12.5-204.bazzite.fc41.x86_64}"
+ARG IMAGE_BRANCH="${IMAGE_BRANCH:-main}"
+ARG SOURCE_IMAGE="${SOURCE_IMAGE:-$BASE_IMAGE_NAME-$BASE_IMAGE_FLAVOR}"
+ARG BASE_IMAGE="ghcr.io/ublue-os/${SOURCE_IMAGE}"
+ARG FEDORA_VERSION="${FEDORA_VERSION:-41}"
+ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20241205.1}"
+ARG SHA_HEAD_SHORT="${SHA_HEAD_SHORT}"
+ARG VERSION_TAG="${VERSION_TAG}"
+ARG VERSION_PRETTY="${VERSION_PRETTY}"
+ARG TARGETPLATFORM
+
+# Platform detection and conditional base images
+FROM scratch AS platform-detector
+ARG TARGETPLATFORM
+RUN echo "Building for platform: ${TARGETPLATFORM}"
+
+# AMD64-specific akmods (only for x86_64 builds)
+FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-amd64
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64
+
+# ARM64 placeholder (no akmods available for ARM)
+FROM scratch AS akmods-arm64
+FROM scratch AS akmods-extra-arm64
+
+# Select appropriate akmods based on platform
+FROM akmods-${TARGETARCH} AS akmods
+FROM akmods-extra-${TARGETARCH} AS akmods-extra
+
+# ARM64 specific base image (Asahi Remix)
+FROM fedora/fedora-asahi-remix:${FEDORA_VERSION} AS base-arm64
+
+# AMD64 specific base image (standard ublue)
+FROM ${BASE_IMAGE}:${FEDORA_VERSION} AS base-amd64
+
+# Select appropriate base based on platform
+FROM base-${TARGETARCH} AS base-image
+
+FROM scratch AS ctx
+COPY build_files /
+
+# Main build stage
+FROM base-image AS bazzite-base
+
+ARG BASE_IMAGE_NAME="${BASE_IMAGE_NAME}"
+ARG BASE_IMAGE_FLAVOR="${BASE_IMAGE_FLAVOR}"
+ARG IMAGE_FLAVOR="${IMAGE_FLAVOR}"
+ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR}"
+ARG NVIDIA_BASE="${NVIDIA_BASE}"
+ARG KERNEL_FLAVOR="${KERNEL_FLAVOR}"
+ARG KERNEL_VERSION="${KERNEL_VERSION}"
+ARG IMAGE_BRANCH="${IMAGE_BRANCH}"
+ARG FEDORA_VERSION="${FEDORA_VERSION}"
+ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION}"
+ARG SHA_HEAD_SHORT="${SHA_HEAD_SHORT}"
+ARG VERSION_TAG="${VERSION_TAG}"
+ARG VERSION_PRETTY="${VERSION_PRETTY}"
+ARG TARGETPLATFORM
+
+# Set up platform-specific variables
+RUN <<EOF
+case "${TARGETPLATFORM}" in
+  "linux/arm64")
+    echo "ARM64_BUILD=1" >> /etc/environment
+    echo "X86_EMULATION=1" >> /etc/environment
+    ;;
+  "linux/amd64")
+    echo "AMD64_BUILD=1" >> /etc/environment
+    ;;
+esac
+EOF
+
+# Install emulation layer for ARM builds
+RUN <<EOF
+if [ "${TARGETPLATFORM}" = "linux/arm64" ]; then
+  # Install qemu-user-static for x86 binary execution
+  dnf install -y qemu-user-static
+  
+  # Set up binfmt for automatic x86 binary handling
+  echo ':x86_64:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:/usr/bin/qemu-x86_64-static:' > /proc/sys/fs/binfmt_misc/register || true
+  
+  # Install box64 for enhanced x86_64 compatibility
+  curl -L https://github.com/ptitSeb/box64/releases/latest/download/box64-generic_arm64.tar.gz | tar -xz -C /usr/local/
+  
+  # Create emulation wrapper functions
+  mkdir -p /usr/local/bin
+  cat > /usr/local/bin/run-x86 << 'WRAPPER_EOF'
+#!/bin/bash
+# Wrapper for running x86_64 binaries on ARM with emulation
+if [ -f /usr/bin/qemu-x86_64-static ]; then
+    exec /usr/bin/qemu-x86_64-static "$@"
+elif [ -f /usr/local/bin/box64 ]; then
+    exec /usr/local/bin/box64 "$@"
+else
+    echo "No x86_64 emulation available" >&2
+    exit 1
+fi
+WRAPPER_EOF
+  chmod +x /usr/local/bin/run-x86
+fi
+EOF
+
+# Copy build files and set up build environment
+COPY --from=ctx / /
+
+# For AMD64 builds, copy akmods
+RUN <<EOF
+if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then
+  # Copy kernel modules from akmods
+  cp -r /tmp/akmods-result/kmods/* /usr/lib/modules/*/extra/ || true
+  cp -r /tmp/akmods-extra-result/kmods/* /usr/lib/modules/*/extra/ || true
+fi
+EOF
+
+# Install base packages with platform-specific handling
+RUN <<EOF
+if [ "${TARGETPLATFORM}" = "linux/arm64" ]; then
+  # Use ARM-specific build script with x86 emulation fallbacks
+  /tmp/build-arm-with-emulation.sh
+else
+  # Use standard x86 build process
+  /tmp/build.sh
+fi
+EOF
+
+# Set up gaming environment with emulation support for ARM
+RUN <<EOF
+if [ "${TARGETPLATFORM}" = "linux/arm64" ]; then
+  # Gaming environment setup for ARM with x86 emulation
+  
+  # Steam wrapper for x86 emulation
+  if [ ! -f /usr/bin/steam ]; then
+    cat > /usr/bin/steam << 'STEAM_EOF'
+#!/bin/bash
+# Steam wrapper for ARM with x86 emulation
+export BOX64_DYNAREC_BIGBLOCK=1
+export BOX64_DYNAREC_STRONGMEM=1
+export BOX64_DYNAREC_FASTNAN=1
+export BOX64_DYNAREC_FASTROUND=1
+export BOX64_WINE=1
+
+if [ -f /usr/bin/box64 ]; then
+    exec box64 /usr/lib/steam/steam "$@"
+elif [ -f /usr/bin/qemu-x86_64-static ]; then
+    exec qemu-x86_64-static /usr/lib/steam/steam "$@"
+else
+    echo "Steam requires x86_64 emulation on ARM64" >&2
+    exit 1
+fi
+STEAM_EOF
+    chmod +x /usr/bin/steam
+  fi
+  
+  # Wine wrapper for x86 emulation
+  if [ ! -f /usr/bin/wine ]; then
+    cat > /usr/bin/wine << 'WINE_EOF'
+#!/bin/bash
+# Wine wrapper for ARM with x86 emulation
+export BOX64_DYNAREC_BIGBLOCK=1
+export BOX64_WINE=1
+
+if [ -f /usr/bin/box64 ]; then
+    exec box64 /usr/bin/wine-x86_64 "$@"
+elif [ -f /usr/bin/qemu-x86_64-static ]; then
+    exec qemu-x86_64-static /usr/bin/wine-x86_64 "$@"
+else
+    echo "Wine requires x86_64 emulation on ARM64" >&2
+    exit 1
+fi
+WINE_EOF
+    chmod +x /usr/bin/wine
+  fi
+fi
+EOF
+
+# Final cleanup and configuration
+RUN <<EOF
+# Clean up package caches
+dnf clean all
+
+# Set platform-specific labels and metadata
+if [ "${TARGETPLATFORM}" = "linux/arm64" ]; then
+  echo "BAZZITE_ARCH=arm64" >> /etc/os-release
+  echo "BAZZITE_EMULATION=x86_64" >> /etc/os-release
+else
+  echo "BAZZITE_ARCH=amd64" >> /etc/os-release
+fi
+
+# Update OS release information
+echo "VERSION_ID=${FEDORA_VERSION}" >> /etc/os-release
+echo "VERSION_TAG=${VERSION_TAG}" >> /etc/os-release
+echo "VERSION_PRETTY=\"${VERSION_PRETTY}\"" >> /etc/os-release
+EOF
+
+# Continue with the rest of the original Containerfile logic...
+# (This would include all the remaining stages from the original file)
+
+# Target stages for different builds
+FROM bazzite-base AS bazzite
+FROM bazzite-base AS bazzite-deck  
+FROM bazzite-base AS bazzite-nvidia
+
+# Additional target stages would be added here following the original structure

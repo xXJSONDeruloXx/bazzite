@@ -42,9 +42,19 @@ ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20241205.1}"
 ARG SHA_HEAD_SHORT="${SHA_HEAD_SHORT}"
 ARG VERSION_TAG="${VERSION_TAG}"
 ARG VERSION_PRETTY="${VERSION_PRETTY}"
+ARG TARGETPLATFORM
 
-FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods
-FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra
+# Platform-conditional akmods (only for x86_64)
+FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-amd64
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64
+
+# ARM64 akmods placeholder (empty stages)
+FROM scratch AS akmods-arm64
+FROM scratch AS akmods-extra-arm64
+
+# Select appropriate akmods based on platform
+FROM akmods-${TARGETARCH} AS akmods
+FROM akmods-extra-${TARGETARCH} AS akmods-extra
 
 FROM scratch AS ctx
 COPY build_files /
@@ -69,8 +79,35 @@ ARG JUPITER_FIRMWARE_VERSION="${JUPITER_FIRMWARE_VERSION:-jupiter-20241205.1}"
 ARG SHA_HEAD_SHORT="${SHA_HEAD_SHORT}"
 ARG VERSION_TAG="${VERSION_TAG}"
 ARG VERSION_PRETTY="${VERSION_PRETTY}"
+ARG TARGETPLATFORM
+
+# Set up platform-specific environment variables
+RUN --mount=type=tmpfs,dst=/tmp \
+    case "${TARGETPLATFORM}" in \
+        "linux/arm64") \
+            echo "ARM64_BUILD=1" >> /etc/environment && \
+            echo "X86_EMULATION=1" >> /etc/environment && \
+            echo "BAZZITE_ARCH=arm64" >> /etc/os-release \
+            ;; \
+        "linux/amd64") \
+            echo "AMD64_BUILD=1" >> /etc/environment && \
+            echo "BAZZITE_ARCH=amd64" >> /etc/os-release \
+            ;; \
+    esac
 
 COPY system_files/desktop/shared system_files/desktop/${BASE_IMAGE_NAME} /
+
+# Install emulation layer for ARM builds
+RUN --mount=type=tmpfs,dst=/tmp \
+    if [ "${TARGETPLATFORM}" = "linux/arm64" ]; then \
+        echo "Setting up x86_64 emulation for ARM64..." && \
+        dnf5 -y install qemu-user-static && \
+        echo ':x86_64:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\x3e\\x00:\\xff\\xff\\xff\\xff\\xff\\xfe\\xfe\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:/usr/bin/qemu-x86_64-static:' > /proc/sys/fs/binfmt_misc/register || true && \
+        curl -L https://github.com/ptitSeb/box64/releases/latest/download/box64-generic_arm64.tar.gz | tar -xz -C /usr/local/ && \
+        mkdir -p /usr/local/bin && \
+        printf '#!/bin/bash\n# Wrapper for running x86_64 binaries on ARM with emulation\nif [ -f /usr/bin/qemu-x86_64-static ]; then\n    exec /usr/bin/qemu-x86_64-static "$@"\nelif [ -f /usr/local/bin/box64 ]; then\n    exec /usr/local/bin/box64 "$@"\nelse\n    echo "No x86_64 emulation available" >&2\n    exit 1\nfi\n' > /usr/local/bin/run-x86 && \
+        chmod +x /usr/local/bin/run-x86 \
+    ; fi
 
 # Setup Copr repos
 RUN --mount=type=cache,dst=/var/cache \
@@ -119,7 +156,7 @@ RUN --mount=type=cache,dst=/var/cache \
     dnf5 -y config-manager setopt "*staging*".exclude="scx-scheds kf6-* mesa* mutter* rpm-ostree* systemd* gnome-shell gnome-settings-daemon gnome-control-center gnome-software libadwaita tuned*" && \
     /ctx/cleanup
 
-# Install kernel
+# Install kernel (x86_64 only, ARM uses distribution kernel)
 RUN --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=bind,from=akmods,src=/kernel-rpms,dst=/tmp/kernel-rpms \
@@ -127,7 +164,11 @@ RUN --mount=type=cache,dst=/var/cache \
     --mount=type=bind,from=akmods-extra,src=/rpms,dst=/tmp/akmods-extra-rpms \
     --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
-    /ctx/install-kernel-akmods && \
+    if [ "${TARGETPLATFORM}" != "linux/arm64" ]; then \
+        /ctx/install-kernel-akmods \
+    ; else \
+        echo "Skipping kernel installation for ARM64, using distribution kernel" \
+    ; fi && \
     dnf5 -y config-manager setopt "*rpmfusion*".enabled=0 && \
     dnf5 -y copr enable bieszczaders/kernel-cachyos-addons && \
     dnf5 -y install \
@@ -647,6 +688,10 @@ RUN --mount=type=cache,dst=/var/cache \
     curl -Lo /usr/lib/sysctl.d/99-bore-scheduler.conf https://github.com/CachyOS/CachyOS-Settings/raw/master/usr/lib/sysctl.d/99-bore-scheduler.conf && \
     curl -Lo /etc/distrobox/docker.ini https://github.com/ublue-os/toolboxes/raw/refs/heads/main/apps/docker/distrobox.ini && \
     curl -Lo /etc/distrobox/incus.ini https://github.com/ublue-os/toolboxes/raw/refs/heads/main/apps/incus/distrobox.ini && \
+    if [ "${TARGETPLATFORM}" = "linux/arm64" ]; then \
+        echo "Running ARM-specific build script with emulation support..." && \
+        /ctx/build-arm-with-emulation.sh \
+    ; fi && \
     /ctx/image-info && \
     /ctx/build-initramfs && \
     /ctx/finalize
