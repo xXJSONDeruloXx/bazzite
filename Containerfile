@@ -1,6 +1,36 @@
 #
 #     %%%%%%====%%%%%%%%%%
-#   %%%%%%%%    %%%%%%%%%%%%%%
+#   %%%%%%%%    %# Platf# Platform-conditional akmods (only for x86_64)
+# Use onbuild to catch failures and provide better error handling
+FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-amd64
+ONBUILD RUN echo "Successfully loaded akmods image"
+
+# Use a try/catch approach for akmods-extra
+FROM alpine:latest AS akmods-extra-check
+ARG KERNEL_FLAVOR
+ARG FEDORA_VERSION
+ARG KERNEL_VERSION
+RUN if [ -n "${KERNEL_FLAVOR}" ] && [ -n "${FEDORA_VERSION}" ] && [ -n "${KERNEL_VERSION}" ]; then \
+    echo "Checking for akmods-extra image with: ${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION}"; \
+    else echo "Missing required arguments for akmods-extra"; exit 0; fi
+
+# Main akmods-extra image - will be used if available
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64
+
+# ARM64 akmods placeholder (empty stages)
+FROM scratch AS akmods-arm64
+FROM scratch AS akmods-extra-arm64
+
+# Select appropriate akmods based on platform
+FROM akmods-${TARGETARCH} AS akmods
+FROM akmods-extra-${TARGETARCH} AS akmods-extraonal akmods (only for x86_64)
+FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-amd64
+# Handle potential unavailability of akmods-extra gracefully
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64 || scratch
+
+# ARM64 akmods placeholder (empty stages)
+FROM scratch AS akmods-arm64
+FROM scratch AS akmods-extra-arm64%%%%%%
 #  %%%%%%%%%    %%%%%%%%%%%%%%%%
 #  %%%%%%%%%    %%%%%%%%%%%%%%%###
 #  %%%%%%%%%    %%%%%%%%%%%%%######
@@ -46,7 +76,7 @@ ARG TARGETPLATFORM
 
 # Platform-conditional akmods (only for x86_64)
 FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-amd64
-FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64 || FROM scratch AS akmods-extra-amd64
 
 # ARM64 akmods placeholder (empty stages)
 FROM scratch AS akmods-arm64

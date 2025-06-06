@@ -1,0 +1,56 @@
+# Platform-conditional akmods build for handling missing images gracefully
+ARG BASE_IMAGE_NAME="${BASE_IMAGE_NAME:-kinoite}"
+ARG BASE_IMAGE_FLAVOR="${BASE_IMAGE_FLAVOR:-main}"
+ARG IMAGE_FLAVOR="${IMAGE_FLAVOR:-main}"
+ARG NVIDIA_FLAVOR="${NVIDIA_FLAVOR:-nvidia}"
+ARG NVIDIA_BASE="${NVIDIA_BASE:-bazzite}"
+ARG KERNEL_FLAVOR="${KERNEL_FLAVOR:-bazzite}"
+ARG KERNEL_VERSION="${KERNEL_VERSION:-6.12.5-204.bazzite.fc41.x86_64}"
+ARG FEDORA_VERSION="${FEDORA_VERSION:-41}"
+ARG TARGETPLATFORM
+
+# Try to use akmods image, fallback to scratch if unavailable
+FROM ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-amd64-attempt
+FROM scratch AS akmods-amd64-fallback
+
+# Use an intermediate stage to verify image exists
+FROM alpine:latest AS akmods-amd64-check
+ARG KERNEL_FLAVOR
+ARG FEDORA_VERSION
+ARG KERNEL_VERSION
+RUN apk add --no-cache skopeo && \
+    if skopeo inspect docker://ghcr.io/ublue-os/akmods:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} >/dev/null 2>&1; then \
+        touch /akmods-exists; \
+    else \
+        touch /akmods-missing; \
+    fi
+
+# Select the appropriate akmods image based on availability
+FROM akmods-amd64-attempt AS akmods-amd64
+COPY --from=akmods-amd64-check /akmods-exists* /tmp/ 2>/dev/null || FROM akmods-amd64-fallback AS akmods-amd64
+
+# Same approach for akmods-extra
+FROM ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} AS akmods-extra-amd64-attempt
+FROM scratch AS akmods-extra-amd64-fallback
+
+FROM alpine:latest AS akmods-extra-amd64-check
+ARG KERNEL_FLAVOR
+ARG FEDORA_VERSION
+ARG KERNEL_VERSION
+RUN apk add --no-cache skopeo && \
+    if skopeo inspect docker://ghcr.io/ublue-os/akmods-extra:${KERNEL_FLAVOR}-${FEDORA_VERSION}-${KERNEL_VERSION} >/dev/null 2>&1; then \
+        touch /akmods-extra-exists; \
+    else \
+        touch /akmods-extra-missing; \
+    fi
+
+FROM akmods-extra-amd64-attempt AS akmods-extra-amd64
+COPY --from=akmods-extra-amd64-check /akmods-extra-exists* /tmp/ 2>/dev/null || FROM akmods-extra-amd64-fallback AS akmods-extra-amd64
+
+# ARM64 akmods placeholder (empty stages)
+FROM scratch AS akmods-arm64
+FROM scratch AS akmods-extra-arm64
+
+# Select appropriate akmods based on platform
+FROM akmods-${TARGETARCH} AS akmods
+FROM akmods-extra-${TARGETARCH} AS akmods-extra
