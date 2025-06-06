@@ -398,3 +398,64 @@ toggle-mute-on-boot:
         echo "Invalid choice. Exiting."
         ;;
     esac
+
+# Enable or disable muting audio when system wakes from suspend/hibernation
+toggle-mute-on-wake:
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+
+    SERVICE_NAME="mute-audio-on-wake.service"
+    SERVICE_PATH="$HOME/.config/systemd/user/$SERVICE_NAME"
+    SCRIPT_PATH="$HOME/.local/bin/mute-audio-on-wake.sh"
+
+    mkdir -p "$HOME/.config/systemd/user"
+    mkdir -p "$HOME/.local/bin"
+
+    # Create the wake mute script if it doesn't exist
+    if [ ! -f "$SCRIPT_PATH" ]; then
+      echo "Creating mute-audio-on-wake.sh..."
+      cp /usr/local/bin/mute-audio-on-wake.sh "$SCRIPT_PATH"
+      chmod +x "$SCRIPT_PATH"
+    fi
+
+    # Create the systemd service if it doesn't exist
+    if [ ! -f "$SERVICE_PATH" ]; then
+      echo "Creating mute-audio-on-wake.service..."
+      cp /usr/share/systemd/user/mute-audio-on-wake.service "$SERVICE_PATH"
+      # Update the ExecStart path to point to the user's local copy
+      sed -i "s|/usr/local/bin/mute-audio-on-wake.sh|$SCRIPT_PATH|" "$SERVICE_PATH"
+    fi
+
+    # Reload systemd in case new unit was written
+    systemctl --user daemon-reexec
+    systemctl --user daemon-reload
+
+    # Check current status
+    STATUS="Disabled"
+    if systemctl --user is-enabled "$SERVICE_NAME" &>/dev/null; then
+      STATUS="Enabled"
+    fi
+
+    echo "Mute on wake from suspend is currently: ${bold}${STATUS}${normal}"
+    echo "Would you like to enable or disable mute on wake?"
+    CHOICE=$(ugum choose Enable Disable Exit)
+
+    case "${CHOICE,,}" in
+      enable)
+        echo "Enabling mute on wake from suspend..."
+        systemctl --user enable "$SERVICE_NAME"
+        echo -e "${green}${bold}Mute on wake from suspend has been enabled.${normal}"
+        echo "Audio will be set to 0% volume when system wakes from suspend/hibernation."
+        ;;
+      disable)
+        echo "Disabling mute on wake from suspend..."
+        systemctl --user disable "$SERVICE_NAME"
+        echo -e "${red}${bold}Mute on wake from suspend has been disabled.${normal}"
+        ;;
+      exit)
+        echo "No changes were made."
+        ;;
+      *)
+        echo "Invalid choice. Exiting."
+        ;;
+    esac
