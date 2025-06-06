@@ -43,7 +43,10 @@ dnf5 install -y --setopt=priority=100 --repo=fedora,updates --skip-broken --skip
   NetworkManager-wifi \
   NetworkManager-bluetooth \
   just \
-  jq
+  jq \
+  qemu-user-static \
+  binfmt-support \
+  cabextract
 
 # Check if thermald is available and install it
 dnf5 list thermald &>/dev/null && dnf5 install -y thermald || echo "thermald package not available, skipping"
@@ -294,7 +297,7 @@ cat > /usr/share/ublue-os/image-info.json << EOF
   "base-image-name": "${BASE_IMAGE_NAME:-silverblue}",
   "fedora-version": "${FEDORA_VERSION:-42}",
   "arch": "aarch64",
-  "description": "Bazzite for Apple Silicon - Built on Fedora Asahi Remix"
+  "description": "Bazzite for Apple Silicon - Built on Fedora Asahi Remix with x86 emulation support"
 }
 EOF
 
