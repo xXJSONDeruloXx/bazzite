@@ -1,4 +1,4 @@
-vim: set ft=make :
+# vim: set ft=make :
 
 # Box86/Box64 x86 emulation management
 
