@@ -1,0 +1,76 @@
+#
+#     %%%%%%====%%%%%%%%%%
+#   %%%%%%%%    %%%%%%%%%%%%%%
+#  %%%%%%%%%    %%%%%%%%%%%%%%%%
+#  %%%%%%%%%    %%%%%%%%%%%%%%%###
+#  %%%%%%%%%    %%%%%%%%%%%%%######
+#  ==                  =======######
+#  ==                  =========#####
+#  %%%%%%%%%    %%%%%%%####======#####
+#  %%%%%%%%%    %%%%%#######=====#####
+#  %%%%%%%%%    %%%#########=====#####
+#  %%%%%%%%%    %%##########=====#####
+#  %%%%%%%%%====###########=====######
+#   %%%%%%%%====#########======######
+#    %%%%%%%=====#####========######
+#     %%%%###===============#######
+#      %#######==========#########
+#        #######################
+#          ###################
+#              ###########
+#
+# Welcome to Bazzite ARM build for Apple Silicon
+# This uses Fedora Asahi Remix as the base image
+
+# Base Image Selection - Using Fedora Asahi Remix for ARM64
+ARG FEDORA_VERSION="${FEDORA_VERSION:-42}"
+ARG BASE_IMAGE_NAME="${BASE_IMAGE_NAME:-silverblue}"
+ARG BASE_IMAGE="quay.io/fedora-asahi-remix-atomic-desktops/${BASE_IMAGE_NAME}:${FEDORA_VERSION}"
+
+# Modules to extend the base image
+FROM scratch AS ctx
+COPY build_files /
+
+# Base image with Apple Silicon support
+FROM ${BASE_IMAGE} AS bazzite-arm
+
+ARG IMAGE_NAME="${IMAGE_NAME:-bazzite-arm}"
+ARG IMAGE_VENDOR="${IMAGE_VENDOR:-ublue-os}"
+ARG FEDORA_VERSION="${FEDORA_VERSION:-42}"
+ARG TARGETARCH=arm64
+ENV TARGETARCH=${TARGETARCH}
+
+# Copy system files
+COPY system_files/desktop/shared system_files/desktop/silverblue /
+
+# Setup and execute build script
+RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
+    --mount=type=cache,dst=/var/cache \
+    --mount=type=cache,dst=/var/log \
+    --mount=type=tmpfs,dst=/tmp \
+    cp /ctx/build-arm.sh /tmp/ && \
+    cp /ctx/setup-x86-emulation.sh /tmp/ && \
+    chmod +x /tmp/build-arm.sh /tmp/setup-x86-emulation.sh && \
+    /tmp/build-arm.sh && \
+    /tmp/setup-x86-emulation.sh && \
+    mkdir -p /usr/share/ublue-os && \
+    touch /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/80-bazzite.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/81-bazzite-fixes.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/82-bazzite-apps.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/82-bazzite-cdemu.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/82-bazzite-sunshine.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/82-bazzite-rmlint.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/82-bazzite-waydroid.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/82-bazzite-x86emu.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/83-bazzite-audio.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/84-bazzite-virt.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/85-bazzite-image.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/86-bazzite-windows.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/87-bazzite-framegen.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/88-bazzite-webapps.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/90-bazzite-de.just\"" >> /usr/share/ublue-os/justfile && \
+    ostree container commit
+
+# Lint the container
+RUN bootc container lint

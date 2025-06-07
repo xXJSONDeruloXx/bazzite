@@ -1,0 +1,191 @@
+name: Build Bazzite ARM
+# This workflow builds the ARM version of Bazzite for Apple Silicon using Asahi Linux as a base
+# It can be triggered manually or by changes to specific branches/files
+
+on:
+  workflow_dispatch:
+    inputs:
+      handwritten:
+        description: 'Small changelog:'
+        required: false
+      fresh-rechunk:
+        description: 'Clear rechunk history'
+        type: boolean
+        default: false
+  schedule:
+    - cron: "40 5 * * 1" # 5:40 utc monday
+  pull_request:
+    branches:
+      - testing
+      - unstable
+      - asahi-build
+    paths-ignore:
+      - "**.md"
+      - "**.txt"
+      - "installer/**"
+      - "repo_content/**"
+      - "spec_files/**"
+      - "post_install_files/**"
+      - "press_kit/**"
+      - "docs/**"
+  push:
+    branches:
+      - testing
+      - unstable
+      - asahi-build
+    paths-ignore:
+      - "**.md"
+      - "**.txt"
+      - "repo_content/**"
+      - "spec_files/**"
+      - "post_install_files/**"
+      - "press_kit/**"
+  merge_group:
+
+env:
+  PUSH_IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-arm
+  cancel-in-progress: true
+
+jobs:
+  push-ghcr-arm:
+    name: Build ARM Image
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        base_image_name: [silverblue, kinoite]
+        fedora_version: [42]
+        platform: [linux/arm64]
+        include:
+          - fedora_version: 42
+            is_latest_version: true
+            is_stable_version: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        
+      - name: Get current date
+        id: date
+        run: |
+          echo "date=$(date -u +%Y\-%m\-%d\T%H\:%M\:%S\Z)" >> $GITHUB_OUTPUT
+
+      - name: Define env.IMAGE_NAME
+        run: |
+          if [[ "${{ matrix.base_image_name }}" == "silverblue" ]]; then
+              echo "IMAGE_NAME=bazzite-arm-gnome" >> $GITHUB_ENV
+          else
+              echo "IMAGE_NAME=bazzite-arm" >> $GITHUB_ENV
+          fi
+          
+      - name: Define env.SHA_HEAD_SHORT
+        run: |
+          echo "SHA_HEAD_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          
+      # Docker requires lowercase registry references
+      - name: Lowercase Registry
+        id: registry_case
+        uses: ASzc/change-string-case-action@d0603cd0a7dd490be678164909f65c7737470a7f # v6
+        with:
+          string: ${{ env.PUSH_IMAGE_REGISTRY }}
+
+      - name: Lowercase Image
+        id: image_case
+        uses: ASzc/change-string-case-action@d0603cd0a7dd490be678164909f65c7737470a7f # v6
+        with:
+          string: ${{ env.IMAGE_NAME }}
+          
+      - name: Image Metadata
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5
+        id: metadata
+        with:
+          images: ${{ steps.registry_case.outputs.lowercase }}/${{ steps.image_case.outputs.lowercase }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ matrix.fedora_version }}
+            type=raw,value=stable
+            type=raw,value=stable-${{ matrix.fedora_version }}
+            type=raw,value=${{ env.SHA_HEAD_SHORT }}
+          labels: |
+            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
+            org.opencontainers.image.description=Bazzite is a custom image built upon Fedora Asahi Remix for Apple Silicon devices. Optimized for gaming and desktop use on ARM64 hardware.
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ matrix.fedora_version }}
+            org.opencontainers.image.created=${{ steps.date.outputs.date }}
+            containers.bootc=1
+          sep-tags: " "
+          sep-annotations: " "
+
+      - name: Build Image
+        id: build_image
+        uses: redhat-actions/buildah-build@7a95fa7ee0f02d552a32753e7414641a04307056 # v2
+        with:
+          containerfiles: |
+            ./Containerfile.arm
+          image: ${{ env.IMAGE_NAME }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          oci: false
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BASE_IMAGE_NAME=${{ matrix.base_image_name }}
+            FEDORA_VERSION=${{ matrix.fedora_version }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/asahi-build')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push To GHCR
+        uses: redhat-actions/push-to-registry@5ed88d269cf581ea9ef6dd6806d01562096bee9c # v2
+        if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/asahi-build')
+        id: push
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ github.token }}
+        with:
+          registry: ${{ steps.registry_case.outputs.lowercase }}
+          image: ${{ steps.image_case.outputs.lowercase }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/asahi-build')
+
+      - name: Sign container image
+        if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/asahi-build')
+        run: |
+          IMAGE_FULL="${{ steps.registry_case.outputs.lowercase }}/${{ steps.image_case.outputs.lowercase }}"
+          for tag in ${{ steps.metadata.outputs.tags }}; do
+            # Extract just the tag part from the full tag reference
+            TAG_ONLY=$(echo "$tag" | cut -d':' -f2)
+            cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_FULL}:${TAG_ONLY}"
+          done
+        env:
+          TAGS: ${{ steps.push.outputs.digest }}
+          COSIGN_EXPERIMENTAL: false
+          COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+
+  generate_release:
+    name: Generate Release
+    needs: [push-ghcr-arm]
+    if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == 'refs/heads/asahi-build')
+    secrets: inherit
+    uses: ./.github/workflows/generate_release.yml
+    with:
+      handwritten: ${{ github.event.inputs.handwritten }}
+      target: ${{ github.ref_name == 'asahi-build' && 'asahi-build' || '' }}

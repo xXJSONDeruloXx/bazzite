@@ -1,0 +1,81 @@
+# filepath: /Users/kurt/Developer/bazzite/iso-arm.toml
+# Image Builder Configuration for Bazzite ARM ISO
+
+# Bootable ISO image configuration
+[iso]
+filename = "bazzite-arm-@VERSION_DATE@.iso"
+volume-id = "BAZZITE_ARM"
+description = "Bazzite ARM for Apple Silicon"
+grub-timeout = 5
+
+# Create a live user with sudo permissions
+[live-user]
+name = "liveuser"
+password = ""  # Empty string means no password
+groups = ["wheel"]
+
+# Define the directories to create in the live environment
+[directories]
+"/var/lib/AccountsService/users" = { mode = 755, recursive = true }
+"/var/log/journal" = { mode = 755, recursive = true }
+
+# Specify release packages to include in the ISO
+[packages]
+include = [
+  "vim",
+  "tmux",
+  "htop",
+  "git",
+  "firefox",
+  "NetworkManager-wifi",
+  "NetworkManager-bluetooth",
+  "power-profiles-daemon",
+  "thermald",
+  "distrobox",
+  "podman",
+  "gnome-tweaks",
+  "gnome-extensions-app"
+]
+
+# Optional - include RPM Fusion repositories
+[repos.rpmfusion-free]
+name = "RPM Fusion Free"
+baseurl = "https://mirrors.rpmfusion.org/free/fedora/releases/$releasever/Everything/$basearch/os/"
+enabled = true
+gpgcheck = true
+gpgkey = "https://mirrors.rpmfusion.org/free/fedora/RPM-GPG-KEY-rpmfusion-free-fedora-$releasever"
+
+[repos.rpmfusion-nonfree]
+name = "RPM Fusion Non-Free"
+baseurl = "https://mirrors.rpmfusion.org/nonfree/fedora/releases/$releasever/Everything/$basearch/os/"
+enabled = true
+gpgcheck = true
+gpgkey = "https://mirrors.rpmfusion.org/nonfree/fedora/RPM-GPG-KEY-rpmfusion-nonfree-fedora-$releasever"
+
+# Configure the bootloader
+[customizations.bootloader]
+append = "quiet splash rd.live.image mitigations=auto"
+timeout = 5
+terminal_output = "console"
+
+# Configure kernel
+[customizations.kernel]
+name = "kernel-asahi"
+
+# Configure OS release information
+[customizations.os-release]
+NAME = "Bazzite ARM"
+VERSION = "@VERSION_DATE@"
+ID = "bazzite-arm"
+ID_LIKE = "fedora"
+VERSION_ID = "@VERSION_DATE@"
+PRETTY_NAME = "Bazzite ARM"
+HOME_URL = "https://github.com/ublue-os/bazzite"
+DOCUMENTATION_URL = "https://universal-blue.discourse.group/c/bazzite/5"
+SUPPORT_URL = "https://github.com/ublue-os/bazzite/issues"
+BUG_REPORT_URL = "https://github.com/ublue-os/bazzite/issues"
+LOGO = "fedora-logo-icon"
+
+# Setup first boot configuration
+[customizations.firstboot]
+reboot = true

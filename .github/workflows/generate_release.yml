@@ -1,5 +1,14 @@
 on:
   workflow_call:
+    inputs:
+      handwritten:
+        type: string
+        required: false
+        description: 'Small changelog about changes in this build:'
+      target:
+        type: string
+        required: false
+        description: 'Release Branch (e.g., testing). Defaults to branch name.'
   workflow_dispatch:
     inputs:
       handwritten:
