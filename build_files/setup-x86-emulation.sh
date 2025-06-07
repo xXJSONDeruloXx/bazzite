@@ -4,21 +4,13 @@ set -eo pipefail
 
 echo "Setting up x86 emulation for ARM64..."
 
-# Create directory for Box86/Box64 repositories
-mkdir -p /etc/yum.repos.d
-
-# Add Box86/Box64 repository
-cat > /etc/yum.repos.d/box86-box64.repo << 'EOF'
-[box86-box64]
-name=Box86/Box64 for ARM64
-baseurl=https://ryanfortner.github.io/box64-debs/debian/
-enabled=1
-gpgcheck=0
-repo_gpgcheck=0
-EOF
+# Enable Box86/Box64 COPR repository for Fedora
+echo "Enabling Box86/Box64 COPR repository..."
+dnf5 -y copr enable churchyard/box86 || echo "Failed to enable Box86 COPR repository"
+dnf5 -y copr enable churchyard/box64 || echo "Failed to enable Box64 COPR repository"
 
 # Install Box86 and Box64 for x86 and x86_64 emulation
-dnf5 install -y --skip-broken --skip-unavailable box86-linux box64-linux
+dnf5 install -y --skip-broken --skip-unavailable box86 box64
 
 # Install binfmt_misc setup
 cat > /etc/binfmt.d/box86.conf << 'EOF'
