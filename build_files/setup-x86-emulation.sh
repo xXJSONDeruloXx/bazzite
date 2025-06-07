@@ -32,7 +32,7 @@ EOF
 # Create just command script for managing x86 emulation
 mkdir -p /usr/share/ublue-os/just
 cat > /usr/share/ublue-os/just/82-bazzite-x86emu.just << 'EOF'
-// vim: set ft=make :
+vim: set ft=make :
 
 # Box86/Box64 x86 emulation management
 
