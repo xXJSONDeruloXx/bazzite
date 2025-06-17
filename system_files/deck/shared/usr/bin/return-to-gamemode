@@ -9,11 +9,22 @@ HOME=$(getent passwd $USER | cut -d: -f6)
 # SteamOS autologin SDDM config
 AUTOLOGIN_CONF='/etc/sddm.conf.d/zz-steamos-autologin.conf'
 
+# Determine which game mode session to return to
+# Check if user was in OpenGamepadUI session
+CURRENT_SESSION_TYPE="gamescope"
+if [[ -f "$HOME/.config/bazzite/last-session-type" ]]; then
+  CURRENT_SESSION_TYPE=$(cat "$HOME/.config/bazzite/last-session-type")
+fi
+
 # Configure autologin if Steam has been updated
 if [[ -f $HOME/.local/share/Steam/ubuntu12_32/steamui.so ]]; then
   {
     echo "[Autologin]"
-    echo "Session=gamescope-session.desktop"
+    if [[ "$CURRENT_SESSION_TYPE" == "opengamepadui" ]]; then
+      echo "Session=gamescope-session-opengamepadui.desktop"
+    else
+      echo "Session=gamescope-session.desktop"
+    fi
   } > "$AUTOLOGIN_CONF"
 fi
 
