@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Gamescope (OpenGamepadUI)
+Comment=SteamOS session with OpenGamepadUI via Gamescope
+Exec=/usr/bin/gamescope-session-plus opengamepadui
+TryExec=/usr/bin/gamescope-session-plus
+Type=Application
+DesktopNames=Gamescope-OpenGamepadUI
+X-GDM-SessionRegisters=true

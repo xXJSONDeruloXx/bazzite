@@ -688,6 +688,95 @@ _toggle-steamdeck-alias:
         ;;
     esac
 
+# Configure Steam Deck presentation mode on supported images
+steamdeck-mode ACTION="prompt":
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+    
+    # Check current mode
+    CURRENT_MODE="Steam"
+    if [[ -f "$HOME/.config/bazzite/disable_steamdeck_flag" ]]; then
+        CURRENT_MODE="Desktop"
+    fi
+    
+    if [[ "${ACTION,,}" == "prompt" ]] || [[ -z "$ACTION" ]]; then
+        echo "Current Steam Deck presentation mode: ${bold}${CURRENT_MODE}${normal}"
+        echo "Select presentation mode:"
+        ACTION=$(ugum choose "Steam (Default)" "Desktop (Non-Steam Deck)" "Cancel")
+        if [[ "${ACTION,,}" =~ steam ]]; then
+            ACTION="enable"
+        elif [[ "${ACTION,,}" =~ desktop ]]; then
+            ACTION="disable"
+        else
+            echo "No changes made."
+            exit 0
+        fi
+    fi
+    
+    # Enable or disable Steam Deck presentation
+    if [[ "$ACTION" == "enable" ]]; then
+        echo "Enabling Steam Deck presentation mode..."
+        rm -f "$HOME/.config/bazzite/disable_steamdeck_flag"
+        echo "Steam Deck presentation mode is now enabled."
+        echo "Use 'steamos-session-select gamescope' to switch to Steam mode."
+    elif [[ "$ACTION" == "disable" ]]; then
+        echo "Disabling Steam Deck presentation mode..."
+        touch "$HOME/.config/bazzite/disable_steamdeck_flag"
+        echo "Steam Deck presentation mode is now disabled."
+        echo "Use 'steamos-session-select opengamepadui' to switch to OpenGamepadUI mode."
+    else
+        echo "Invalid action: $ACTION"
+        exit 1
+    fi
+    
+    echo "Changes will take effect after the next boot or session restart."
+
+# Switch between Steam and OpenGamepadUI as the default game mode UI
+switch-game-ui UI="prompt":
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+    
+    # Check current game UI
+    CURRENT_UI="Steam"
+    if [[ -f "$HOME/.config/bazzite/use-opengamepadui" ]]; then
+        CURRENT_UI="OpenGamepadUI"
+    fi
+    
+    if [[ "${UI,,}" == "prompt" ]] || [[ -z "$UI" ]]; then
+        echo "Current game mode UI: ${bold}${CURRENT_UI}${normal}"
+        echo "Select game mode UI:"
+        OPTION=$(ugum choose "Steam (Default)" "OpenGamepadUI (Alternative)")
+        if [[ "${OPTION,,}" =~ steam ]]; then
+            UI="steam"
+        elif [[ "${OPTION,,}" =~ opengamepadui ]]; then
+            UI="opengamepadui"
+        else
+            echo "No changes made."
+            exit 0
+        fi
+    fi
+    
+    mkdir -p "$HOME/.config/bazzite"
+    
+    if [[ "${UI,,}" == "steam" ]]; then
+        echo "Switching to Steam as default game mode UI..."
+        rm -f "$HOME/.config/bazzite/use-opengamepadui"
+        echo "steam" > "$HOME/.config/bazzite/last-session-type"
+        echo "Steam is now the default game mode UI."
+        echo "Use 'steamos-session-select gamescope' to switch to Steam mode."
+    elif [[ "${UI,,}" == "opengamepadui" ]]; then
+        echo "Switching to OpenGamepadUI as default game mode UI..."
+        touch "$HOME/.config/bazzite/use-opengamepadui"
+        echo "opengamepadui" > "$HOME/.config/bazzite/last-session-type"
+        echo "OpenGamepadUI is now the default game mode UI."
+        echo "Use 'steamos-session-select opengamepadui' to switch to OpenGamepadUI mode."
+    else
+        echo "Invalid UI option: $UI"
+        exit 1
+    fi
+    
+    echo "Changes will take effect after the next boot or session restart."
+
 # get logs for this boot and last boot, cleanly output in terminal as pastebin links, to simplify troubleshooting and issue reporting.
 get-logs:
     #!/bin/bash

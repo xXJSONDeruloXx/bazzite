@@ -1,0 +1,22 @@
+#!/usr/bin/bash
+
+# OpenGamepadUI session configuration for gamescope-session-plus
+# Based on the OpenGamepadUI session repository by ShadowBlip
+
+# Set cursor file (fallback to Steam's cursor if available)
+if [[ -f "${HOME}/.local/share/Steam/tenfoot/resource/images/cursors/arrow_right.png" ]]; then
+    CURSOR_FILE="${HOME}/.local/share/Steam/tenfoot/resource/images/cursors/arrow_right.png"
+fi
+
+# Default OpenGamepadUI command
+CLIENTCMD="opengamepadui"
+
+# Allow user override via environment files
+# Sources from ~/.config/environment.d/*.conf files
+if [[ -f "${HOME}/.config/environment.d/gamescope-session.conf" ]]; then
+    source "${HOME}/.config/environment.d/gamescope-session.conf"
+fi
+
+# Export for gamescope-session-plus
+export CLIENTCMD
+export CURSOR_FILE
