@@ -1,7 +1,7 @@
 # vim: set ft=make :
 
 # Install ClairObscurFix for Expedition 33
-install-clairobscur-fix:
+patch-expedition33:
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
     
