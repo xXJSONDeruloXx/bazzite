@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+
+# This forces various lyall patches to work by setting the proper WINEDLLOVERRIDES for dsound.dll
+
+export WINEDLLOVERRIDES="dsound=n,b"
+
+# applied variables, now execute the rest of the command
+exec "$@"
