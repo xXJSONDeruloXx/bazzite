@@ -71,7 +71,7 @@ patch-expedition33:
         echo "Could not automatically find Expedition 33 installation directory."
         echo "Please enter the full path to your Expedition 33 installation:"
         read -r GAME_DIR
-        
+
         # Verify the path exists
         if [ ! -d "$GAME_DIR" ]; then
             echo "${red}Error: The specified directory does not exist.${normal}"
@@ -85,7 +85,7 @@ patch-expedition33:
     if [ ! -d "$GAME_DIR/Sandfall" ]; then
         echo "${red}Error: The directory does not appear to be a valid Expedition 33 installation.${normal}"
         echo "The directory should contain a 'Sandfall' folder."
-        
+
         # Ask if user wants to proceed anyway
         echo "Do you want to proceed anyway?"
         OPTION=$(ugum choose "Yes" "No")
