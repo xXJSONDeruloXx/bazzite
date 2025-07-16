@@ -202,13 +202,15 @@ get-framegen ACTION="prompt":
 get-lsfg ACTION="prompt":
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
-
+    INSTALL_PATH="$HOME/.local"
+    IMPLICIT_LAYER_DIR="$INSTALL_PATH/share/vulkan/implicit_layer.d"
     function check_lsfg_installed() {
-        INSTALL_PATH="$HOME/.local"
-        if [[ -f "$INSTALL_PATH/lib/liblsfg-vk.so" ]] && [[ -f "$INSTALL_PATH/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json" ]]; then
+        if [[ -f "$IMPLICIT_LAYER_DIR/../../../lib/liblsfg-vk.so" ]] && [[ -f "$IMPLICIT_LAYER_DIR/VkLayer_LS_frame_generation.json" ]]; then
             echo "${green}${bold}lsfg-vk is installed and ready to use.${normal}"
+            return 0
         else
             echo "${red}${bold}lsfg-vk is not installed.${normal}"
+            return 1
         fi
     }
 
@@ -236,7 +238,7 @@ get-lsfg ACTION="prompt":
         echo ""
         echo "What would you like to do with lsfg-vk?"
         echo ""
-        OPTION=$(ugum choose "Install Decky Lossless Scaling plugin" "Install lsfg-vk directly" "Uninstall lsfg-vk" "Exit without changes")
+        OPTION=$(ugum choose "Install Decky Lossless Scaling plugin" "Install lsfg-vk directly" "Uninstall lsfg-vk" "Install to flatpak" "Exit without changes")
     elif [ "$OPTION" == "help" ]; then
         echo "Usage: just get-lsfg <option>"
         echo "  <option>: Specify an action - 'install', 'install-decky-plugin', or 'uninstall'"
@@ -245,12 +247,51 @@ get-lsfg ACTION="prompt":
         echo "  Use 'uninstall' to remove lsfg-vk."
         exit 0
     fi
-
     if [ "${OPTION,,}" == "install" ] || [ "${OPTION,,}" == "install lsfg-vk directly" ]; then
         echo "Installing lsfg-vk directly..."
         curl -sSf https://pancake.gay/lsfg-vk.sh | sh
         echo "lsfg-vk installed successfully!"
         echo "The lsfg-vk binary should now be available in your PATH."
+    elif [ "${OPTION,,}" == "install-to-flatpak" ] || [ "${OPTION,,}" == "install to flatpak" ]; then
+        if check_lsfg_installed; then
+            echo -e "What is the ID of the flatpak you want to install LSFG to?\n(e.g. org.prismlauncher.PrismLauncher)"
+        	read -p ": " APP_ID
+            if [ -z "${APP_ID}" ]; then
+                echo "App ID cannot be empty"
+                exit 1
+            fi
+            APP_DIR="$HOME/.var/app/$APP_ID"
+            FLATPACK_IMPLICIT_LAYER_DIR="$APP_DIR/config/vulkan/implicit_layer.d"
+            if [ ! -d "$FLATPACK_IMPLICIT_LAYER_DIR" ]; then
+                echo "Creating flatpak vulkan implicit layer directory..."
+                mkdir -p "$FLATPACK_IMPLICIT_LAYER_DIR"
+            fi
+            if [ ! -d "$FLATPACK_IMPLICIT_LAYER_DIR/../../../lib/" ]; then
+                echo "Creating flatpak vulkan implicit layer directory..."
+                mkdir -p "$FLATPACK_IMPLICIT_LAYER_DIR/../../../lib/"
+            fi
+            if [ ! -d "$APP_DIR/data/Steam/steamapps/common/" ]; then
+                echo "Creating Steam Lossless Scaling directory..."
+                mkdir -p "$APP_DIR/data/Steam/steamapps/common/"
+            else
+                echo "Removing old Steam Lossless Scaling directory..."
+                rm -rf "$APP_DIR/data/Steam/steamapps/common/Lossless Scaling/"
+            fi
+            FLATPAK_LIBARY_PATH="$FLATPACK_IMPLICIT_LAYER_DIR/../../../lib/liblsfg-vk.so"
+            if [ -f "$FLATPAK_LIBARY_PATH" ]; then
+                rm $FLATPAK_LIBARY_PATH
+            fi
+            IMPLICIT_LAYER_FILE_PATH="$FLATPACK_IMPLICIT_LAYER_DIR/VkLayer_LS_frame_generation.json"
+            if [ -f "$IMPLICIT_LAYER_FILE_PATH" ]; then
+                rm $IMPLICIT_LAYER_FILE_PATH
+            fi
+
+            cp "$IMPLICIT_LAYER_DIR/../../../lib/liblsfg-vk.so" "$FLATPAK_LIBARY_PATH"
+            cp "$IMPLICIT_LAYER_DIR/VkLayer_LS_frame_generation.json" "$IMPLICIT_LAYER_FILE_PATH"
+            cp -r "$HOME/.local/share/Steam/steamapps/common/Lossless Scaling/" "$APP_DIR/data/Steam/steamapps/common/Lossless Scaling/"
+        else
+            echo "lsfg-vk must be installed before file can be copied over to flatpak application"
+        fi
     elif [ "${OPTION,,}" == "install-decky-plugin" ] || [ "${OPTION,,}" == "install decky lossless scaling plugin" ]; then
         echo "Installing Decky Lossless Scaling plugin..."
 
@@ -364,14 +405,13 @@ get-lsfg ACTION="prompt":
         echo "Uninstalling lsfg-vk..."
 
         # Remove lsfg-vk layer files
-        INSTALL_PATH="$HOME/.local"
-        if [[ -f "$INSTALL_PATH/lib/liblsfg-vk.so" ]]; then
-            rm -v "$INSTALL_PATH/lib/liblsfg-vk.so"
+        if [[ -f "$IMPLICIT_LAYER_DIR/../../../lib/liblsfg-vk.so" ]]; then
+            rm -v "$IMPLICIT_LAYER_DIR/../../../lib/liblsfg-vk.so"
             echo "Removed lsfg-vk library"
         fi
 
-        if [[ -f "$INSTALL_PATH/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json" ]]; then
-            rm -v "$INSTALL_PATH/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json"
+        if [[ -f "$IMPLICIT_LAYER_DIR/VkLayer_LS_frame_generation.json" ]]; then
+            rm -v "$IMPLICIT_LAYER_DIR/VkLayer_LS_frame_generation.json"
             echo "Removed lsfg-vk Vulkan layer"
         fi
 
