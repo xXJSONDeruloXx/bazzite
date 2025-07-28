@@ -1,0 +1,20 @@
+# OpenGamepadUI systemd mount unit for session switching
+# This creates an overlay mount to switch between Steam and OpenGamepadUI wayland sessions
+# Inspired by usr-share-sddm-themes.mount for theme switching
+
+[Unit]
+Description=OpenGamepadUI wayland session overlay
+RequiresMountsFor=/usr /var
+ConditionPathExists=/usr/share/wayland-sessions
+ConditionPathExists=/var/opengamepadui_session/wayland-sessions
+ConditionPathExists=/var/opengamepadui_session/wayland-sessions.work
+PartOf=bazzite-opengamepadui-session.target
+
+[Mount]
+Type=overlay
+What=overlay
+Where=/usr/share/wayland-sessions
+Options=lowerdir=/usr/share/wayland-sessions,upperdir=/var/opengamepadui_session/wayland-sessions,workdir=/var/opengamepadui_session/wayland-sessions.work
+
+[Install]
+WantedBy=multi-user.target

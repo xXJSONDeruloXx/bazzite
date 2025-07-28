@@ -1,0 +1,36 @@
+#!/usr/bin/bash
+
+# Bazzite OpenGamepadUI session launcher wrapper
+# This script provides a bridge between the gamescope session system and OpenGamepadUI
+# Similar to how bazzite-steam works, but for OpenGamepadUI
+
+IMAGE_INFO="/usr/share/ublue-os/image-info.json"
+IMAGE_NAME=$(jq -r '."image-name"' < $IMAGE_INFO)
+
+# Check if we're on a handheld device (deck/ally variants)
+if [[ $IMAGE_NAME =~ "deck" || $IMAGE_NAME =~ "ally" ]]; then
+    # Apply OpenGamepadUI branding if available
+    if [[ -f /usr/bin/bazzite-opengamepadui-brand ]]; then
+        /usr/bin/bazzite-opengamepadui-brand
+    fi
+    
+    # Set helpful clipboard content for launch options on handheld devices  
+    echo -n " %command%" | wl-copy 2>/dev/null || true
+    
+    # Check if OpenGamepadUI is installed
+    if ! command -v opengamepadui >/dev/null 2>&1; then
+        echo "OpenGamepadUI is not installed. Please install it first."
+        exit 1
+    fi
+    
+    # Launch OpenGamepadUI
+    exec /usr/bin/opengamepadui "$@"
+else
+    # On desktop systems, launch OpenGamepadUI normally
+    if ! command -v opengamepadui >/dev/null 2>&1; then
+        echo "OpenGamepadUI is not installed. Please install it first."
+        exit 1
+    fi
+    
+    exec /usr/bin/opengamepadui "$@"
+fi

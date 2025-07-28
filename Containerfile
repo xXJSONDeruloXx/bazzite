@@ -562,6 +562,7 @@ RUN --mount=type=cache,dst=/var/cache \
     echo "import \"/usr/share/ublue-os/just/87-bazzite-framegen.just\"" >> /usr/share/ublue-os/justfile && \
     echo "import \"/usr/share/ublue-os/just/88-bazzite-webapps.just\"" >> /usr/share/ublue-os/justfile && \
     echo "import \"/usr/share/ublue-os/just/89-bazzite-mesa-git.just\"" >> /usr/share/ublue-os/justfile && \
+    echo "import \"/usr/share/ublue-os/just/89-bazzite-opengamepadui.just\"" >> /usr/share/ublue-os/justfile && \
     echo "import \"/usr/share/ublue-os/just/90-bazzite-picker.just\"" >> /usr/share/ublue-os/justfile && \
     echo "import \"/usr/share/ublue-os/just/90-bazzite-de.just\"" >> /usr/share/ublue-os/justfile && \
     if grep -q "kinoite" <<< "${BASE_IMAGE_NAME}"; then \
@@ -789,6 +790,12 @@ RUN --mount=type=cache,dst=/var/cache \
     --repo copr:copr.fedorainfracloud.org:bazzite-org:bazzite \
         gamescope-session-plus \
         gamescope-session-steam && \
+    curl -L https://github.com/ShadowBlip/gamescope-session-opengamepadui/archive/refs/heads/main.tar.gz -o /tmp/gamescope-session-opengamepadui.tar.gz && \
+    cd /tmp && \
+    tar -xzf gamescope-session-opengamepadui.tar.gz && \
+    cp gamescope-session-opengamepadui-main/usr/share/gamescope-session-plus/sessions.d/opengamepadui /usr/share/gamescope-session-plus/sessions.d/ && \
+    chmod +x /usr/share/gamescope-session-plus/sessions.d/opengamepadui && \
+    rm -rf /tmp/gamescope-session-opengamepadui* && \
     /ctx/cleanup
 
 # Cleanup & Finalize
