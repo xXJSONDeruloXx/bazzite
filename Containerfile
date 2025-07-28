@@ -793,8 +793,9 @@ RUN --mount=type=cache,dst=/var/cache \
     curl -L https://github.com/ShadowBlip/gamescope-session-opengamepadui/archive/refs/heads/main.tar.gz -o /tmp/gamescope-session-opengamepadui.tar.gz && \
     cd /tmp && \
     tar -xzf gamescope-session-opengamepadui.tar.gz && \
-    cp gamescope-session-opengamepadui-main/usr/share/gamescope-session-plus/sessions.d/opengamepadui /usr/share/gamescope-session-plus/sessions.d/ && \
+    cp -r gamescope-session-opengamepadui-main/usr/* /usr/ && \
     chmod +x /usr/share/gamescope-session-plus/sessions.d/opengamepadui && \
+    chmod +x /usr/bin/opengamepadui-session-select && \
     rm -rf /tmp/gamescope-session-opengamepadui* && \
     /ctx/cleanup
 

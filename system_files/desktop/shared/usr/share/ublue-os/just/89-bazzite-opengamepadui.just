@@ -81,16 +81,8 @@ setup-opengamepadui ACTION="prompt":
             # Ensure the overlay directories exist
             sudo mkdir -p /var/opengamepadui_session/wayland-sessions /var/opengamepadui_session/wayland-sessions.work
             
-            # Use the official gamescope-session-opengamepadui desktop file
-            # Create the OpenGamepadUI session file in the overlay based on the official session
-            sudo bash -c 'cat > /var/opengamepadui_session/wayland-sessions/gamescope-session-opengamepadui.desktop << "EOF"
-[Desktop Entry]
-Exec=/usr/bin/gamescope-session-plus opengamepadui
-TryExec=/usr/bin/gamescope-session-plus
-DesktopNames=OpenGamepadUI
-Name=OpenGamepadUI (Gamescope Session)
-Comment=OpenGamepadUI running in a Gamescope session for gamepad-driven gaming
-EOF'
+            # Copy the official gamescope-session-opengamepadui desktop file to the overlay
+            sudo cp /usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop /var/opengamepadui_session/wayland-sessions/
             
             # Enable the overlay mount
             sudo systemctl enable --now usr-share-wayland-sessions-opengamepadui.mount
