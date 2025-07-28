@@ -1,6 +1,6 @@
 # vim: set ft=make :
 
-# Switch between Steam and OpenGamepadUI as the gamescope session launcher  
+# Switch between Steam and OpenGamepadUI as the gamescope session launcher
 setup-opengamepadui ACTION="":
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
@@ -40,19 +40,19 @@ setup-opengamepadui ACTION="":
             "Install OpenGamepadUI" \\
             "Exit without changes")
     fi
-    
+
     case "$OPTION" in
         "Switch to Steam session"|steam)
             if [[ "$CURRENT_SESSION" == "Steam" ]]; then
                 echo "Steam is already configured as the gamescope session launcher."
                 exit 0
             fi
-            
+
             echo "Switching to Steam as the gamescope session launcher..."
-            
+
             # Disable the OpenGamepadUI session overlay
             sudo systemctl disable --now usr-share-wayland\\x2dsessions.mount 2>/dev/null || true
-            
+
             # Use steamos-session-select for consistency
             if command -v steamos-session-select >/dev/null 2>&1; then
                 steamos-session-select gamescope
@@ -60,11 +60,11 @@ setup-opengamepadui ACTION="":
                 echo "${red}${bold}Error:${normal} steamos-session-select not found."
                 exit 1
             fi
-            
+
             echo "${bold}${green}Successfully switched to Steam!${normal}"
             echo "Changes will take effect on next session start."
             ;;
-            
+
         "Switch to OpenGamepadUI session"|opengamepadui)
             if [[ "$CURRENT_SESSION" == "OpenGamepadUI" ]]; then
                 echo "OpenGamepadUI is already configured as the gamescope session launcher."
@@ -82,7 +82,7 @@ setup-opengamepadui ACTION="":
 
             # Ensure the overlay directories exist
             sudo mkdir -p /var/opengamepadui_session/wayland-sessions /var/opengamepadui_session/wayland-sessions.work
-            
+
             # Copy the official gamescope-session-opengamepadui desktop file to the overlay
             if ! sudo cp /usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop /var/opengamepadui_session/wayland-sessions/ 2>/dev/null; then
                                     echo "${red}${bold}Error:${normal} Failed to download or install OpenGamepadUI systemd extension."
