@@ -88,6 +88,19 @@ esac
 
 echo "Updated user selected session to $session_launcher"
 
+# Manage OpenGamepadUI-related services based on session selection
+if [[ $session_launcher == 'gamescope-session-opengamepadui.desktop' ]]; then
+  # Start OpenGamepadUI services if they exist
+  systemctl start powerstation 2>/dev/null || true
+  systemctl start inputplumber 2>/dev/null || true
+  systemctl start inputplumber-suspend 2>/dev/null || true
+else
+  # Stop OpenGamepadUI services when switching away
+  systemctl stop powerstation 2>/dev/null || true
+  systemctl stop inputplumber 2>/dev/null || true
+  systemctl stop inputplumber-suspend 2>/dev/null || true
+fi
+
 # Become root
 if [[ $EUID != 0 ]]; then
   exec pkexec "$(realpath $0)" "$session" --sentinel-created "$session_type"

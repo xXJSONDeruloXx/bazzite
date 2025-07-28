@@ -1,69 +1,71 @@
 # vim: set ft=make :
 
-# Switch between Steam and OpenGamepadUI as the gamescope session launcher
-setup-opengamepadui ACTION="prompt":
+# Switch between Steam and OpenGamepadUI as the gamescope session launcher  
+setup-opengamepadui ACTION="":
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
-    OPTION={{ ACTION }}
 
     # Check current session configuration via systemd mount status
     CURRENT_SESSION="Steam"
-    if systemctl is-active --quiet usr-share-wayland-sessions-opengamepadui.mount; then
-        CURRENT_SESSION="OpenGamepadUI"
+    if systemctl is-active --quiet usr-share-wayland\\x2dsessions.mount; then
+        CURRENT_SESSION="OpenGamepadUI"  
     fi
 
+    OPTION="{{ ACTION }}"
     if [ "$OPTION" == "help" ]; then
         echo "Usage: ujust setup-opengamepadui <option>"
-        echo "  <option>: Specify the quick option to skip the prompt"
+        echo "  <option>: Specify the option to skip the interactive prompt"
         echo "  Use 'steam' to switch to Steam as the gamescope session launcher"
         echo "  Use 'opengamepadui' to switch to OpenGamepadUI as the gamescope session launcher"  
         echo "  Use 'install' to install OpenGamepadUI"
         echo "  Use 'status' to check current gamescope session launcher"
-        echo "  Use 'exit' to exit without making changes"
         exit 0
     elif [ "$OPTION" == "status" ]; then
-        echo "Current gamescope session launcher: ${b}${green}$CURRENT_SESSION${n}"
+        echo "Current gamescope session launcher: ${bold}${green}$CURRENT_SESSION${normal}"
         exit 0
     elif [ "$OPTION" == "" ]; then
-        echo "${b}Bazzite OpenGamepadUI Setup${n}"
-        echo "Current gamescope session launcher: ${b}${green}$CURRENT_SESSION${n}"
+        echo ""
+        echo "${bold}Bazzite OpenGamepadUI Setup${normal}"
+        echo ""
+        echo "${bold}Current gamescope session launcher:${normal} ${green}$CURRENT_SESSION${normal}"
         echo ""
         echo "This utility allows you to switch between Steam and OpenGamepadUI"
         echo "as your primary gamepad-driven interface in gamescope session mode."
         echo ""
         echo "What would you like to do?"
-        OPTION=$(ugum choose \
-            "Switch to Steam" \
-            "Switch to OpenGamepadUI" \
-            "Install OpenGamepadUI" \
+        echo ""
+        OPTION=$(ugum choose \\
+            "Switch to Steam session" \\
+            "Switch to OpenGamepadUI session" \\
+            "Install OpenGamepadUI" \\
             "Exit without changes")
     fi
-
+    
     case "$OPTION" in
-        "Switch to Steam" | "steam")
+        "Switch to Steam session"|steam)
             if [[ "$CURRENT_SESSION" == "Steam" ]]; then
                 echo "Steam is already configured as the gamescope session launcher."
                 exit 0
             fi
-
+            
             echo "Switching to Steam as the gamescope session launcher..."
-
+            
             # Disable the OpenGamepadUI session overlay
-            sudo systemctl disable --now usr-share-wayland-sessions-opengamepadui.mount 2>/dev/null || true
-
+            sudo systemctl disable --now usr-share-wayland\\x2dsessions.mount 2>/dev/null || true
+            
             # Use steamos-session-select for consistency
             if command -v steamos-session-select >/dev/null 2>&1; then
                 steamos-session-select gamescope
             else
-                echo "${red}${b}Error:${n} steamos-session-select not found."
+                echo "${red}${bold}Error:${normal} steamos-session-select not found."
                 exit 1
             fi
-
-            echo "${b}${green}Successfully switched to Steam!${n}"
+            
+            echo "${bold}${green}Successfully switched to Steam!${normal}"
             echo "Changes will take effect on next session start."
             ;;
-
-        "Switch to OpenGamepadUI" | "opengamepadui")
+            
+        "Switch to OpenGamepadUI session"|opengamepadui)
             if [[ "$CURRENT_SESSION" == "OpenGamepadUI" ]]; then
                 echo "OpenGamepadUI is already configured as the gamescope session launcher."
                 exit 0
@@ -71,7 +73,7 @@ setup-opengamepadui ACTION="prompt":
 
             # Check if OpenGamepadUI is installed
             if ! command -v opengamepadui >/dev/null 2>&1; then
-                echo "${red}${b}Error:${n} OpenGamepadUI is not installed."
+                echo "${red}${bold}Error:${normal} OpenGamepadUI is not installed."
                 echo "Please install OpenGamepadUI first by selecting the install option."
                 exit 1
             fi
@@ -80,22 +82,30 @@ setup-opengamepadui ACTION="prompt":
 
             # Ensure the overlay directories exist
             sudo mkdir -p /var/opengamepadui_session/wayland-sessions /var/opengamepadui_session/wayland-sessions.work
-
+            
             # Copy the official gamescope-session-opengamepadui desktop file to the overlay
-            sudo cp /usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop /var/opengamepadui_session/wayland-sessions/
-
-            # Enable the overlay mount
-            sudo systemctl enable --now usr-share-wayland-sessions-opengamepadui.mount
-
-            # Switch to the OpenGamepadUI session
-            if command -v steamos-session-select >/dev/null 2>&1; then
-                steamos-session-select opengamepadui
-            else
-                echo "${red}${b}Error:${n} steamos-session-select not found."
+            if ! sudo cp /usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop /var/opengamepadui_session/wayland-sessions/ 2>/dev/null; then
+                                    echo "${red}${bold}Error:${normal} Failed to download or install OpenGamepadUI systemd extension."
+                exit 1
+            fi            # Enable the overlay mount
+            if ! sudo systemctl enable --now usr-share-wayland\\x2dsessions.mount; then
+                echo "${red}${bold}Error:${normal} Failed to enable OpenGamepadUI session overlay."
+                echo "Please check systemd logs: sudo journalctl -u usr-share-wayland\\\\x2dsessions.mount"
                 exit 1
             fi
 
-            echo "${b}${green}Successfully switched to OpenGamepadUI!${n}"
+            # Switch to the OpenGamepadUI session
+            if command -v steamos-session-select >/dev/null 2>&1; then
+                if ! steamos-session-select opengamepadui; then
+                    echo "${red}${bold}Error:${normal} Failed to switch session. This may require manual session switching."
+                    echo "You can try logging out and selecting OpenGamepadUI from the login screen."
+                fi
+            else
+                echo "${red}${bold}Error:${normal} steamos-session-select not found."
+                exit 1
+            fi
+
+            echo "${bold}${green}Successfully switched to OpenGamepadUI!${normal}"
             echo "Changes will take effect on next session start."
             ;;
 
@@ -146,15 +156,15 @@ setup-opengamepadui ACTION="prompt":
                     # Force refresh if needed
                     sudo systemd-sysext refresh --force
 
-                    echo "${b}${green}OpenGamepadUI installation completed!${n}"
+                    echo "${bold}${green}OpenGamepadUI installation completed!${normal}"
                     echo "You can now switch to OpenGamepadUI using this script."
                 else
-                    echo "${red}${b}Error:${n} Could not find OpenGamepadUI systemd extension in releases."
+                    echo "${red}${bold}Error:${normal} Could not find OpenGamepadUI systemd extension in releases."
                     exit 1
                 fi
             fi
 
-            echo "${b}${green}Installation completed successfully!${n}"
+            echo "${bold}${green}Installation completed successfully!${normal}"
             echo "You can now switch to OpenGamepadUI session."
             ;;
 
@@ -195,5 +205,5 @@ create-opengamepadui-shortcut:
     } > "$DESKTOP_FILE"
 
     chmod +x "$DESKTOP_FILE"
-    echo "${b}${green}Desktop shortcut created successfully!${n}"
+    echo "${bold}${green}Desktop shortcut created successfully!${normal}"
     echo "You can now use this shortcut to return to OpenGamepadUI from desktop mode."
