@@ -7,7 +7,7 @@ setup-opengamepadui ACTION="":
 
     # Check current session configuration via systemd mount status
     CURRENT_SESSION="Steam"
-    if systemctl is-active --quiet usr-share-wayland\\x2dsessions.mount; then
+    if systemctl is-active --quiet usr-share-wayland-sessions.mount; then
         CURRENT_SESSION="OpenGamepadUI"  
     fi
 
@@ -34,10 +34,10 @@ setup-opengamepadui ACTION="":
         echo ""
         echo "What would you like to do?"
         echo ""
-        OPTION=$(ugum choose \\
-            "Switch to Steam session" \\
-            "Switch to OpenGamepadUI session" \\
-            "Install OpenGamepadUI" \\
+        OPTION=$(ugum choose \
+            "Switch to Steam session" \
+            "Switch to OpenGamepadUI session" \
+            "Install OpenGamepadUI" \
             "Exit without changes")
     fi
 
@@ -51,7 +51,7 @@ setup-opengamepadui ACTION="":
             echo "Switching to Steam as the gamescope session launcher..."
 
             # Disable the OpenGamepadUI session overlay
-            sudo systemctl disable --now usr-share-wayland\\x2dsessions.mount 2>/dev/null || true
+            sudo systemctl disable --now usr-share-wayland-sessions.mount 2>/dev/null || true
 
             # Use steamos-session-select for consistency
             if command -v steamos-session-select >/dev/null 2>&1; then
@@ -83,14 +83,57 @@ setup-opengamepadui ACTION="":
             # Ensure the overlay directories exist
             sudo mkdir -p /var/opengamepadui_session/wayland-sessions /var/opengamepadui_session/wayland-sessions.work
 
-            # Copy the official gamescope-session-opengamepadui desktop file to the overlay
-            if ! sudo cp /usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop /var/opengamepadui_session/wayland-sessions/ 2>/dev/null; then
-                                    echo "${red}${bold}Error:${normal} Failed to download or install OpenGamepadUI systemd extension."
+            # Set proper SELinux context for the overlay directories if SELinux is enabled
+            if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+                sudo restorecon -R /var/opengamepadui_session/ 2>/dev/null || true
+            fi
+
+            # Verify directories exist and are accessible
+            echo "Verifying overlay directories..."
+            if [[ ! -d "/usr/share/wayland-sessions" ]]; then
+                echo "${red}${bold}Error:${normal} Base directory /usr/share/wayland-sessions does not exist."
                 exit 1
-            fi            # Enable the overlay mount
-            if ! sudo systemctl enable --now usr-share-wayland\\x2dsessions.mount; then
+            fi
+            if [[ ! -d "/var/opengamepadui_session/wayland-sessions" ]] || [[ ! -d "/var/opengamepadui_session/wayland-sessions.work" ]]; then
+                echo "${red}${bold}Error:${normal} Overlay directories were not created successfully."
+                exit 1
+            fi
+
+            # Check if overlay filesystem is supported
+            if ! grep -q overlay /proc/filesystems; then
+                echo "${red}${bold}Error:${normal} Overlay filesystem is not supported by the kernel."
+                exit 1
+            fi
+
+            # Copy the official gamescope-session-opengamepadui desktop file to the overlay
+            # Check if the desktop file exists in the systemd extension first
+            DESKTOP_FILE_SOURCE=""
+            if [[ -f "/usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop" ]]; then
+                DESKTOP_FILE_SOURCE="/usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop"
+            elif [[ -f "/var/lib/extensions/opengamepadui/usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop" ]]; then
+                DESKTOP_FILE_SOURCE="/var/lib/extensions/opengamepadui/usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop"
+            else
+                echo "${red}${bold}Error:${normal} OpenGamepadUI session file not found. OpenGamepadUI may not be properly installed."
+                echo "Expected locations:"
+                echo "  - /usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop"
+                echo "  - /var/lib/extensions/opengamepadui/usr/share/wayland-sessions/gamescope-session-opengamepadui.desktop"
+                exit 1
+            fi
+
+            if ! sudo cp "$DESKTOP_FILE_SOURCE" /var/opengamepadui_session/wayland-sessions/; then
+                echo "${red}${bold}Error:${normal} Failed to copy OpenGamepadUI session file."
+                exit 1
+            fi
+
+            # Enable the overlay mount
+            echo "Enabling overlay mount..."
+            if ! sudo systemctl enable --now usr-share-wayland-sessions.mount; then
                 echo "${red}${bold}Error:${normal} Failed to enable OpenGamepadUI session overlay."
-                echo "Please check systemd logs: sudo journalctl -u usr-share-wayland\\\\x2dsessions.mount"
+                echo "Please check systemd logs: sudo journalctl -u usr-share-wayland-sessions.mount"
+                echo "Additional debugging info:"
+                echo "  - Check directory permissions: ls -la /var/opengamepadui_session/"
+                echo "  - Check overlay support: grep overlay /proc/filesystems"
+                echo "  - Check SELinux denials: sudo ausearch -m AVC -ts recent"
                 exit 1
             fi
 

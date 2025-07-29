@@ -10,8 +10,8 @@ USER=$(id -nu 1000)
 HOME=$(getent passwd $USER | cut -d: -f6)
 
 # Enable the OpenGamepadUI session overlay if not already active
-if ! systemctl is-active --quiet usr-share-wayland\\x2dsessions.mount; then
-    sudo systemctl enable --now usr-share-wayland\\x2dsessions.mount
+if ! systemctl is-active --quiet usr-share-wayland-sessions.mount; then
+    sudo systemctl enable --now usr-share-wayland-sessions.mount
 fi
 
 # Use steamos-session-select to switch to OpenGamepadUI session
