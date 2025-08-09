@@ -272,82 +272,82 @@ configure-watchdog ACTION="":
 
 # Install and configure Decky Loader (https://github.com/SteamDeckHomebrew/decky-loader) and plugins for alternative handhelds
 setup-decky ACTION="":
-    #!/usr/bin/bash
-    if [[ $(id -u) -eq 0 ]]; then
-        echo >&2 "ERROR: Do not run this with sudo"
-        exit 1
-    fi
+    #!/usr/bin/pkexec /usr/bin/bash
+    # Honor invoking user when running under pkexec
+    ORIG_UID="${PKEXEC_UID:-${SUDO_UID:-$UID}}"
+    ORIG_USER="$(id -nu "$ORIG_UID" 2>/dev/null || echo "$USER")"
+    ORIG_HOME="$(getent passwd "$ORIG_UID" | cut -d: -f6)"
+    export USER="$ORIG_USER"
+    export HOME="${ORIG_HOME:-$HOME}"
+    cd "$HOME"
     source /usr/lib/ujust/ujust.sh
-    DECKY_STATE="${b}${red}Not Installed${n}"
-    if [[ -f /etc/systemd/system/multi-user.target.wants/plugin_loader.service ]]; then
-      DECKY_STATE="${b}${green}Installed${n}"
-    fi
-    install_release() {
-      export HOME=$(getent passwd ${SUDO_USER:-$USER} | cut -d: -f6)
-      if [ ! -L "/home/deck" ] && [ ! -e "/home/deck" ]  && [ "$HOME" != "/home/deck" ]; then
-        echo "Making a /home/deck symlink to fix plugins that do not use environment variables."
-        sudo -A ln -sf "$HOME" /home/deck
+      DECKY_STATE="${b}${red}Not Installed${n}"
+      if [[ -f /etc/systemd/system/multi-user.target.wants/plugin_loader.service ]]; then
+        DECKY_STATE="${b}${green}Installed${n}"
       fi
-      if [[ -d ~/homebrew ]]; then
-        sudo -A chown -R --reference ~/ ~/homebrew
-      fi
-      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_release.sh |
-        sed 's|sudo|sudo -A |g' | sh
-      sudo -A chcon -R -t bin_t $HOME/homebrew/services/PluginLoader
-    }
-    install_prerelease() {
-      export HOME=$(getent passwd ${SUDO_USER:-$USER} | cut -d: -f6)
-      if [ ! -L "/home/deck" ] && [ ! -e "/home/deck" ]  && [ "$HOME" != "/home/deck" ]; then
-        echo "Making a /home/deck symlink to fix plugins that do not use environment variables."
-        sudo -A ln -sf "$HOME" /home/deck
-      fi
-      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_prerelease.sh | sh
-      sudo -A chcon -R -t bin_t $HOME/homebrew/services/PluginLoader
-    }
-    uninstall() {
-      echo "Uninstalling Decky Loader..."
-      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/uninstall.sh | sh
-      echo "Decky Loader has been uninstalled."
-    }
-    OPTION={{ ACTION }}
-    if [ "$OPTION" == "help" ]; then
-      echo "Usage: ujust setup-decky <option>"
-      echo "  <option>: Specify the quick option to skip the prompt"
-      echo "  Use 'install' to select Install Decky"
-      echo "  Use 'prerelease' to select Install Decky Prerelease"
-      echo "  Use 'uninstall' to uninstall Decky Loader"
-      exit 0
-    elif [ "$OPTION" == "" ]; then
-      echo "${bold}Decky Loader setup and configuration${normal}"
-      echo "Decky is $DECKY_STATE"
-      OPTION=$(ugum choose "Install Decky" "Install Decky Prerelease" "Uninstall Decky" "Exit")
-      case "$OPTION" in
-        "Install Decky")
+      install_release() {
+        # Ensure /home/deck symlink exists for plugins that hardcode it
+        if [ ! -L "/home/deck" ] && [ ! -e "/home/deck" ]  && [ "$HOME" != "/home/deck" ]; then
+          echo "Making a /home/deck symlink to fix plugins that do not use environment variables."
+          ln -sf "$HOME" /home/deck
+        fi
+        curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_release.sh |
+          sh
+        chcon -R -t bin_t "$HOME/homebrew/services/PluginLoader" 2>/dev/null || true
+      }
+      install_prerelease() {
+        # Ensure /home/deck symlink exists for plugins that hardcode it
+        if [ ! -L "/home/deck" ] && [ ! -e "/home/deck" ]  && [ "$HOME" != "/home/deck" ]; then
+          echo "Making a /home/deck symlink to fix plugins that do not use environment variables."
+          ln -sf "$HOME" /home/deck
+        fi
+        curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_prerelease.sh | sh
+        chcon -R -t bin_t "$HOME/homebrew/services/PluginLoader" 2>/dev/null || true
+      }
+      uninstall() {
+        echo "Uninstalling Decky Loader..."
+        curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/uninstall.sh | sh
+        echo "Decky Loader has been uninstalled."
+      }
+      OPTION={{ ACTION }}
+      if [ "$OPTION" == "help" ]; then
+        echo "Usage: ujust setup-decky <option>"
+        echo "  <option>: Specify the quick option to skip the prompt"
+        echo "  Use 'install' to select Install Decky"
+        echo "  Use 'prerelease' to select Install Decky Prerelease"
+        echo "  Use 'uninstall' to uninstall Decky Loader"
+        exit 0
+      elif [ "$OPTION" == "" ]; then
+        echo "${bold}Decky Loader setup and configuration${normal}"
+        echo "Decky is $DECKY_STATE"
+        OPTION=$(ugum choose "Install Decky" "Install Decky Prerelease" "Uninstall Decky" "Exit")
+        case "$OPTION" in
+          "Install Decky")
+          install_release
+          ;;
+          "Install Decky Prerelease")
+          install_prerelease
+          ;;
+          "Uninstall Decky")
+          uninstall
+          ;;
+          "Exit")
+          echo "No changes were made."
+          ;;
+          *)
+          echo "No changes were made."
+          ;;
+        esac
+      elif [[ "$OPTION" == "install" ]]; then
         install_release
-        ;;
-        "Install Decky Prerelease")
+        exit 0
+      elif [[ "$OPTION" == "prerelease" ]]; then
         install_prerelease
-        ;;
-        "Uninstall Decky")
+        exit 0
+      elif [[ "$OPTION" == "uninstall" ]]; then
         uninstall
-        ;;
-        "Exit")
-        echo "No changes were made."
-        ;;
-        *)
-        echo "No changes were made."
-        ;;
-      esac
-    elif [[ "$OPTION" == "install" ]]; then
-      install_release
-      exit 0
-    elif [[ "$OPTION" == "prerelease" ]]; then
-      install_prerelease
-      exit 0
-    elif [[ "$OPTION" == "uninstall" ]]; then
-      uninstall
-      exit 0
-    fi
+        exit 0
+      fi
 
 # Ptyxis terminal transparency
 ptyxis-transparency opacity="0.95":
