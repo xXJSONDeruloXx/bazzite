@@ -1,8 +1,33 @@
 # vim: set ft=make :
 
+_decky_helpers := '''
+# resolves the real invoking user when elevated with pkexec/sudo, else falls back to $UID
+_resolve_target_uid() {
+  if [[ -n "${PKEXEC_UID:-}" ]]; then echo "$PKEXEC_UID"
+  elif [[ -n "${SUDO_UID:-}" ]]; then echo "$SUDO_UID"
+  else echo "$UID"; fi
+}
+_resolve_target_user() { id -nu "$(_resolve_target_uid)"; }
+_resolve_target_home() { getent passwd "$(_resolve_target_user)" | cut -d: -f6; }
+
+# path helpers (do not assume ~ expands under pkexec)
+_plugins_dir() { echo "$(_resolve_target_home)/homebrew/plugins"; }
+
+# run a command as root using polkit; error out cleanly if polkit is missing/denied
+_as_root() {
+  if ! command -v pkexec >/dev/null 2>&1; then
+    echo "pkexec not found; cannot write to root-owned Homebrew." >&2
+    return 127
+  fi
+  # Use bash -lc so we can pass pipelines/heredocs safely
+  pkexec /usr/bin/bash -lc "$*"
+}
+'''
+
 # Set up DLSS-Enabler Upscaling and Framegen mod. This mod replaces DLSS upscaling and frame generation with FSR3 equivalents in supported games.
 get-framegen ACTION="prompt":
     #!/usr/bin/bash
+    {{_decky_helpers}}
     source /usr/lib/ujust/ujust.sh
     FG_FILES=(
         "amd_fidelityfx_dx12.dll" "dlssg_to_fsr3_amd_is_better.dll" "libxess.dll"
@@ -34,7 +59,7 @@ get-framegen ACTION="prompt":
         fi
     }
     function check_decky_installed() {
-        PLUGIN_DIR="$HOME/homebrew/plugins/Decky-Framegen"
+        PLUGIN_DIR="$(_plugins_dir)/Decky-Framegen"
         if [[ -d "$PLUGIN_DIR" ]]; then
             echo "${green}${bold}Decky Framegen plugin is installed.${normal}"
         else
@@ -80,15 +105,9 @@ get-framegen ACTION="prompt":
         echo "Installing Decky Framegen plugin..."
 
         # Check if Decky is installed
-        if [ ! -d "$HOME/homebrew" ]; then
+        if [ ! -d "$(_resolve_target_home)/homebrew" ]; then
             echo "Error: Decky Loader is not installed. Please run 'ujust setup-decky install' first."
             exit 1
-        fi
-
-        # Fix ownership of homebrew plugins directory if it exists but is owned by root
-        if [ -d "$HOME/homebrew/plugins" ] && [ ! -w "$HOME/homebrew/plugins" ]; then
-            echo "Fixing ownership of plugins directory..."
-            sudo chown -R $(whoami):$(whoami) "$HOME/homebrew/plugins"
         fi
 
         API_URL="https://api.github.com/repos/xXJSONDeruloXx/Decky-Framegen/releases/latest"
@@ -100,18 +119,12 @@ get-framegen ACTION="prompt":
         fi
 
         PLUGIN_NAME="Decky-Framegen"
-        PLUGIN_DIR="$HOME/homebrew/plugins"
+        PLUGIN_DIR="$(_plugins_dir)"
 
-        # Ensure plugins directory exists and has correct permissions
+        # Ensure plugins directory exists
         if [ ! -d "$PLUGIN_DIR" ]; then
             echo "Creating plugins directory..."
-            mkdir -p "$PLUGIN_DIR"
-        fi
-
-        # Fix permissions on plugins directory if needed
-        if [ ! -w "$PLUGIN_DIR" ]; then
-            echo "Fixing permissions on plugins directory..."
-            chmod u+w "$PLUGIN_DIR"
+            _as_root "mkdir -p \"$PLUGIN_DIR\"" || { echo "Failed to create plugins directory" >&2; exit $?; }
         fi
 
         # Work in a temporary directory to avoid permission issues
@@ -121,7 +134,7 @@ get-framegen ACTION="prompt":
         # Remove any existing plugin folder
         if [ -d "$PLUGIN_DIR/$PLUGIN_NAME" ]; then
             echo "Removing existing $PLUGIN_NAME directory..."
-            rm -rf "$PLUGIN_DIR/$PLUGIN_NAME"
+            _as_root "rm -rf \"$PLUGIN_DIR/$PLUGIN_NAME\"" || { echo "Failed to remove existing plugin" >&2; exit $?; }
         fi
 
         echo "Downloading $PLUGIN_NAME from $PLUGIN_URL..."
@@ -163,13 +176,13 @@ get-framegen ACTION="prompt":
         # Move plugin to final location
         if [ -d "./$PLUGIN_NAME" ]; then
             echo "Installing plugin to $PLUGIN_DIR..."
-            mv "./$PLUGIN_NAME" "$PLUGIN_DIR/"
+            _as_root "mv \"./$PLUGIN_NAME\" \"$PLUGIN_DIR/\"" || { echo "Failed to install plugin" >&2; exit $?; }
 
             # Fix permissions on plugin files and make scripts executable
             echo "Setting correct permissions..."
-            chmod -R u+w "$PLUGIN_DIR/$PLUGIN_NAME"
-            find "$PLUGIN_DIR/$PLUGIN_NAME" -name "*.sh" -exec chmod +x {} \;
-            find "$PLUGIN_DIR/$PLUGIN_NAME" -name "*.py" -exec chmod +x {} \;
+            _as_root "chmod -R u+rwX \"$PLUGIN_DIR/$PLUGIN_NAME\"" || { echo "Failed to set permissions" >&2; exit $?; }
+            _as_root "find \"$PLUGIN_DIR/$PLUGIN_NAME\" -name '*.sh' -exec chmod +x {} \;" || { echo "Failed to mark scripts executable" >&2; exit $?; }
+            _as_root "find \"$PLUGIN_DIR/$PLUGIN_NAME\" -name '*.py' -exec chmod +x {} \;" || { echo "Failed to mark scripts executable" >&2; exit $?; }
 
             echo "$PLUGIN_NAME has been installed successfully to $PLUGIN_DIR!"
             echo "Please restart Decky Loader to activate the plugin."
@@ -207,6 +220,7 @@ get-framegen ACTION="prompt":
 # Set up Lossless Scaling vulkan layer and decky plugin. This mod enables lossless scaling compatibility in linux. Be sure to also install Lossless Scaling from Steam to internal storage.
 get-lsfg ACTION="prompt":
     #!/usr/bin/bash
+    {{_decky_helpers}}
     source /usr/lib/ujust/ujust.sh
 
     function check_lsfg_installed() {
@@ -222,7 +236,7 @@ get-lsfg ACTION="prompt":
     }
 
     function check_decky_lsfg_installed() {
-        PLUGIN_DIR="$HOME/homebrew/plugins/Lossless Scaling"
+        PLUGIN_DIR="$(_plugins_dir)/Lossless Scaling"
         if [[ -d "$PLUGIN_DIR" ]]; then
             echo "${green}${bold}Decky Lossless Scaling plugin is installed.${normal}"
         else
@@ -364,15 +378,9 @@ get-lsfg ACTION="prompt":
         echo "Installing Decky Lossless Scaling plugin..."
 
         # Check if Decky is installed
-        if [ ! -d "$HOME/homebrew" ]; then
+        if [ ! -d "$(_resolve_target_home)/homebrew" ]; then
             echo "Error: Decky Loader is not installed. Please run 'ujust setup-decky install' first."
             exit 1
-        fi
-
-        # Fix ownership of homebrew plugins directory if it exists but is owned by root
-        if [ -d "$HOME/homebrew/plugins" ] && [ ! -w "$HOME/homebrew/plugins" ]; then
-            echo "Fixing ownership of plugins directory..."
-            sudo chown -R $(whoami):$(whoami) "$HOME/homebrew/plugins"
         fi
 
         API_URL="https://api.github.com/repos/xXJSONDeruloXx/decky-lossless-scaling-vk/releases/latest"
@@ -384,18 +392,12 @@ get-lsfg ACTION="prompt":
         fi
 
         PLUGIN_NAME="Lossless-Scaling"
-        PLUGIN_DIR="$HOME/homebrew/plugins"
+        PLUGIN_DIR="$(_plugins_dir)"
 
-        # Ensure plugins directory exists and has correct permissions
+        # Ensure plugins directory exists
         if [ ! -d "$PLUGIN_DIR" ]; then
             echo "Creating plugins directory..."
-            mkdir -p "$PLUGIN_DIR"
-        fi
-
-        # Fix permissions on plugins directory if needed
-        if [ ! -w "$PLUGIN_DIR" ]; then
-            echo "Fixing permissions on plugins directory..."
-            chmod u+w "$PLUGIN_DIR"
+            _as_root "mkdir -p \"$PLUGIN_DIR\"" || { echo "Failed to create plugins directory" >&2; exit $?; }
         fi
 
         # Work in a temporary directory to avoid permission issues
@@ -405,15 +407,13 @@ get-lsfg ACTION="prompt":
         # Remove any existing plugin folder
         if [ -d "$PLUGIN_DIR/$PLUGIN_NAME" ]; then
             echo "Removing existing $PLUGIN_NAME directory..."
-            chmod -R u+w "$PLUGIN_DIR/$PLUGIN_NAME" 2>/dev/null || true
-            rm -rf "$PLUGIN_DIR/$PLUGIN_NAME"
+            _as_root "rm -rf \"$PLUGIN_DIR/$PLUGIN_NAME\"" || { echo "Failed to remove existing plugin" >&2; exit $?; }
         fi
 
-        # Also remove the expected final name in case it exists with different permissions
+        # Also remove the expected final name in case it exists
         if [ -d "$PLUGIN_DIR/Lossless Scaling" ]; then
             echo "Removing existing Lossless Scaling directory..."
-            chmod -R u+w "$PLUGIN_DIR/Lossless Scaling" 2>/dev/null || true
-            rm -rf "$PLUGIN_DIR/Lossless Scaling"
+            _as_root "rm -rf \"$PLUGIN_DIR/Lossless Scaling\"" || { echo "Failed to remove existing plugin" >&2; exit $?; }
         fi
 
         echo "Downloading $PLUGIN_NAME from $PLUGIN_URL..."
@@ -455,13 +455,13 @@ get-lsfg ACTION="prompt":
         # Move plugin to final location
         if [ -d "./$PLUGIN_NAME" ]; then
             echo "Installing plugin to $PLUGIN_DIR..."
-            mv "./$PLUGIN_NAME" "$PLUGIN_DIR/Lossless Scaling"
+            _as_root "mv \"./$PLUGIN_NAME\" \"$PLUGIN_DIR/Lossless Scaling\"" || { echo "Failed to install plugin" >&2; exit $?; }
 
             # Fix permissions on plugin files and make scripts executable
             echo "Setting correct permissions..."
-            chmod -R u+w "$PLUGIN_DIR/Lossless Scaling"
-            find "$PLUGIN_DIR/Lossless Scaling" -name "*.sh" -exec chmod +x {} \;
-            find "$PLUGIN_DIR/Lossless Scaling" -name "*.py" -exec chmod +x {} \;
+            _as_root "chmod -R u+rwX \"$PLUGIN_DIR/Lossless Scaling\"" || { echo "Failed to set permissions" >&2; exit $?; }
+            _as_root "find \"$PLUGIN_DIR/Lossless Scaling\" -name '*.sh' -exec chmod +x {} \;" || { echo "Failed to mark scripts executable" >&2; exit $?; }
+            _as_root "find \"$PLUGIN_DIR/Lossless Scaling\" -name '*.py' -exec chmod +x {} \;" || { echo "Failed to mark scripts executable" >&2; exit $?; }
 
             echo "Lossless Scaling plugin has been installed successfully to $PLUGIN_DIR!"
             echo "Please restart Decky Loader to activate the plugin."

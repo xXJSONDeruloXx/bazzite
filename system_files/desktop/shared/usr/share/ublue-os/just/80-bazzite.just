@@ -1,5 +1,29 @@
 # vim: set ft=make :
 
+_decky_helpers := '''
+# resolves the real invoking user when elevated with pkexec/sudo, else falls back to $UID
+_resolve_target_uid() {
+  if [[ -n "${PKEXEC_UID:-}" ]]; then echo "$PKEXEC_UID"
+  elif [[ -n "${SUDO_UID:-}" ]]; then echo "$SUDO_UID"
+  else echo "$UID"; fi
+}
+_resolve_target_user() { id -nu "$(_resolve_target_uid)"; }
+_resolve_target_home() { getent passwd "$(_resolve_target_user)" | cut -d: -f6; }
+
+# path helpers (do not assume ~ expands under pkexec)
+_plugins_dir() { echo "$(_resolve_target_home)/homebrew/plugins"; }
+
+# run a command as root using polkit; error out cleanly if polkit is missing/denied
+_as_root() {
+  if ! command -v pkexec >/dev/null 2>&1; then
+    echo "pkexec not found; cannot write to root-owned Homebrew." >&2
+    return 127
+  fi
+  # Use bash -lc so we can pass pipelines/heredocs safely
+  pkexec /usr/bin/bash -lc "$*"
+}
+'''
+
 # Install System Flatpaks (Support for Rebasing)
 _install-system-flatpaks:
     #!/usr/bin/bash
@@ -273,6 +297,7 @@ configure-watchdog ACTION="":
 # Install and configure Decky Loader (https://github.com/SteamDeckHomebrew/decky-loader) and plugins for alternative handhelds
 setup-decky ACTION="":
     #!/usr/bin/bash
+    {{_decky_helpers}}
     if [[ $(id -u) -eq 0 ]]; then
         echo >&2 "ERROR: Do not run this with sudo"
         exit 1
@@ -283,30 +308,29 @@ setup-decky ACTION="":
       DECKY_STATE="${b}${green}Installed${n}"
     fi
     install_release() {
-      export HOME=$(getent passwd ${SUDO_USER:-$USER} | cut -d: -f6)
+      export HOME="$(_resolve_target_home)"
       if [ ! -L "/home/deck" ] && [ ! -e "/home/deck" ]  && [ "$HOME" != "/home/deck" ]; then
         echo "Making a /home/deck symlink to fix plugins that do not use environment variables."
-        sudo -A ln -sf "$HOME" /home/deck
-      fi
-      if [[ -d ~/homebrew ]]; then
-        sudo -A chown -R --reference ~/ ~/homebrew
+        _as_root "ln -sf \"$HOME\" /home/deck" || { echo "Failed to create /home/deck symlink" >&2; exit $?; }
       fi
       curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_release.sh |
-        sed 's|sudo|sudo -A |g' | sh
-      sudo -A chcon -R -t bin_t $HOME/homebrew/services/PluginLoader
+        sed 's|sudo|pkexec|g' | bash
+      _as_root "chcon -R -t bin_t \"$HOME/homebrew/services/PluginLoader\"" || { echo "Failed to set SELinux context" >&2; exit $?; }
     }
     install_prerelease() {
-      export HOME=$(getent passwd ${SUDO_USER:-$USER} | cut -d: -f6)
+      export HOME="$(_resolve_target_home)"
       if [ ! -L "/home/deck" ] && [ ! -e "/home/deck" ]  && [ "$HOME" != "/home/deck" ]; then
         echo "Making a /home/deck symlink to fix plugins that do not use environment variables."
-        sudo -A ln -sf "$HOME" /home/deck
+        _as_root "ln -sf \"$HOME\" /home/deck" || { echo "Failed to create /home/deck symlink" >&2; exit $?; }
       fi
-      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_prerelease.sh | sh
-      sudo -A chcon -R -t bin_t $HOME/homebrew/services/PluginLoader
+      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/install_prerelease.sh |
+        sed 's|sudo|pkexec|g' | bash
+      _as_root "chcon -R -t bin_t \"$HOME/homebrew/services/PluginLoader\"" || { echo "Failed to set SELinux context" >&2; exit $?; }
     }
     uninstall() {
       echo "Uninstalling Decky Loader..."
-      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/uninstall.sh | sh
+      curl -L https://github.com/SteamDeckHomebrew/decky-installer/releases/latest/download/uninstall.sh |
+        sed 's|sudo|pkexec|g' | bash
       echo "Decky Loader has been uninstalled."
     }
     OPTION={{ ACTION }}
@@ -590,21 +614,16 @@ toggle-password-feedback ACTION="":
 get-decky-bazzite-buddy:
     #!/bin/bash
     set -euo pipefail
+    {{_decky_helpers}}
     REPO_OWNER="xXJSONDeruloXx"
     REPO_NAME="bazzite-buddy"
     PLUGIN_NAME="bazzite-buddy"
-    PLUGIN_DIR="$HOME/homebrew/plugins"
+    PLUGIN_DIR="$(_plugins_dir)"
 
     # Check if Decky is installed
-    if [ ! -d "$HOME/homebrew" ]; then
+    if [ ! -d "$(_resolve_target_home)/homebrew" ]; then
       echo "Error: Decky Loader is not installed. Please run 'ujust setup-decky install' first."
       exit 1
-    fi
-
-    # Fix ownership of homebrew plugins directory if it exists but is owned by root
-    if [ -d "$HOME/homebrew/plugins" ] && [ ! -w "$HOME/homebrew/plugins" ]; then
-      echo "Fixing ownership of plugins directory..."
-      sudo chown -R $(whoami):$(whoami) "$HOME/homebrew/plugins"
     fi
 
     # Get the latest release information with timeout
@@ -628,16 +647,10 @@ get-decky-bazzite-buddy:
       echo "Found latest release: $PLUGIN_URL"
     fi
 
-    # Ensure plugins directory exists and has correct permissions
+    # Ensure plugins directory exists
     if [ ! -d "$PLUGIN_DIR" ]; then
       echo "Creating plugins directory..."
-      mkdir -p "$PLUGIN_DIR"
-    fi
-
-    # Fix permissions on plugins directory if needed
-    if [ ! -w "$PLUGIN_DIR" ]; then
-      echo "Fixing permissions on plugins directory..."
-      chmod u+w "$PLUGIN_DIR"
+      _as_root "mkdir -p \"$PLUGIN_DIR\"" || { echo "Failed to create plugins directory" >&2; exit $?; }
     fi
 
     # Work in a temporary directory to avoid permission issues
@@ -647,7 +660,7 @@ get-decky-bazzite-buddy:
     # Remove any existing plugin folder
     if [ -d "$PLUGIN_DIR/$PLUGIN_NAME" ]; then
       echo "Removing existing $PLUGIN_NAME directory..."
-      rm -rf "$PLUGIN_DIR/$PLUGIN_NAME"
+      _as_root "rm -rf \"$PLUGIN_DIR/$PLUGIN_NAME\"" || { echo "Failed to remove existing plugin" >&2; exit $?; }
     fi
 
     # Download the zip file
@@ -698,13 +711,13 @@ get-decky-bazzite-buddy:
     # Move plugin to final location
     if [ -d "./$PLUGIN_NAME" ]; then
       echo "Installing plugin to $PLUGIN_DIR..."
-      mv "./$PLUGIN_NAME" "$PLUGIN_DIR/"
+      _as_root "mv \"./$PLUGIN_NAME\" \"$PLUGIN_DIR/\"" || { echo "Failed to install plugin" >&2; exit $?; }
 
       # Fix permissions on plugin files and make scripts executable
       echo "Setting correct permissions..."
-      chmod -R u+w "$PLUGIN_DIR/$PLUGIN_NAME"
-      find "$PLUGIN_DIR/$PLUGIN_NAME" -name "*.sh" -exec chmod +x {} \;
-      find "$PLUGIN_DIR/$PLUGIN_NAME" -name "*.py" -exec chmod +x {} \;
+      _as_root "chmod -R u+rwX \"$PLUGIN_DIR/$PLUGIN_NAME\"" || { echo "Failed to set permissions" >&2; exit $?; }
+      _as_root "find \"$PLUGIN_DIR/$PLUGIN_NAME\" -name '*.sh' -exec chmod +x {} \;" || { echo "Failed to mark scripts executable" >&2; exit $?; }
+      _as_root "find \"$PLUGIN_DIR/$PLUGIN_NAME\" -name '*.py' -exec chmod +x {} \;" || { echo "Failed to mark scripts executable" >&2; exit $?; }
 
       echo "$PLUGIN_NAME has been installed successfully to $PLUGIN_DIR!"
       echo "Please restart Decky Loader to activate the plugin."
