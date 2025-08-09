@@ -397,3 +397,134 @@ disable-steamos-automount:
 # Enable SteamOS automount.
 enable-steamos-automount:
     pkexec rm -f /etc/udev/rules.d/99-steamos-automount.rules
+
+# Fix ACPI wakeup sources that cause instant wake from sleep/suspend
+fix-sleep-wakeup:
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+    echo "${b}ACPI Sleep/Wake Fix${n}"
+    echo "This tool helps fix systems that instantly wake up when trying to sleep/suspend."
+    echo "It shows ACPI wakeup sources that may be causing the issue and lets you disable them."
+    echo ""
+    # Check if ACPI wakeup is available
+    if [[ ! -f /proc/acpi/wakeup ]]; then
+      echo "${red}${b}/proc/acpi/wakeup not found.${n}"
+      echo "ACPI wakeup functionality may not be available on this system."
+      exit 1
+    fi
+    # Show current enabled wakeup sources
+    echo "${b}Currently Enabled ACPI Wakeup Sources:${n}"
+    ENABLED_SOURCES=$(grep "\*enabled" /proc/acpi/wakeup | awk '{print $1}' | tr '\n' ' ')
+    DISABLED_SOURCES=$(grep "\*disabled" /proc/acpi/wakeup | awk '{print $1}' | tr '\n' ' ')
+    if [[ -z "$ENABLED_SOURCES" ]]; then
+      echo "${green}No ACPI wakeup sources are currently enabled.${n}"
+    else
+      echo "$ENABLED_SOURCES"
+    fi
+    if [[ -n "$DISABLED_SOURCES" ]]; then
+      echo ""
+      echo "${b}Currently Disabled ACPI Wakeup Sources:${n}"
+      echo "$DISABLED_SOURCES"
+    fi
+    if [[ -z "$ENABLED_SOURCES" && -z "$DISABLED_SOURCES" ]]; then
+      echo "${yellow}No ACPI wakeup sources found.${n}"
+      echo "Your system may not support ACPI wakeup or may not have instant wake issues."
+      exit 0
+    fi
+    echo ""
+    echo "Common problematic sources:"
+    echo "- GPP0, GPP7: PCIe ports (often Gigabyte/AMD boards)"  
+    echo "- XHC0, XHC1, XHC2: USB controllers (often wireless devices)"
+    echo "- GP17: PCIe graphics/audio"
+    echo ""
+    # Check GPP0 service status for backwards compatibility
+    SERVICE_STATUS="Not Available"
+    if systemctl list-unit-files gigabyte-sleep-fix.service &>/dev/null; then
+      if systemctl is-enabled gigabyte-sleep-fix.service &>/dev/null; then
+        SERVICE_STATUS="Enabled"
+      else
+        SERVICE_STATUS="Disabled"
+      fi
+    fi
+    if [[ "$SERVICE_STATUS" != "Not Available" ]]; then
+      echo "GPP0 Auto-fix Service: $SERVICE_STATUS"
+      echo ""
+    fi
+    # Build menu options
+    MENU_OPTIONS=()
+    # Add individual wakeup source toggles for enabled sources
+    for SOURCE in $ENABLED_SOURCES; do
+      MENU_OPTIONS+=("Disable $SOURCE")
+    done
+    # Add individual wakeup source toggles for disabled sources
+    for SOURCE in $DISABLED_SOURCES; do
+      MENU_OPTIONS+=("Enable $SOURCE")
+    done
+    # Add service options if available
+    if [[ "$SERVICE_STATUS" == "Disabled" ]]; then
+      MENU_OPTIONS+=("Enable GPP0 Auto-fix Service")
+    elif [[ "$SERVICE_STATUS" == "Enabled" ]]; then
+      MENU_OPTIONS+=("Disable GPP0 Auto-fix Service")
+    fi
+    MENU_OPTIONS+=("Save Current Configuration")
+    MENU_OPTIONS+=("Restore Saved Configuration")
+    MENU_OPTIONS+=("Show All Wakeup Sources")
+    MENU_OPTIONS+=("Exit")
+    CHOICE=$(ugum choose "${MENU_OPTIONS[@]}")
+    case "$CHOICE" in
+      "Disable "*)
+        SOURCE=$(echo "$CHOICE" | sed 's/Disable //')
+        echo "Disabling $SOURCE wakeup source..."
+        echo "$SOURCE" | sudo tee /proc/acpi/wakeup > /dev/null
+        echo "${green}${b}$SOURCE disabled.${n} Changes take effect immediately."
+        echo "Note: This change will reset on reboot."
+        ;;
+      "Enable "*)
+        SOURCE=$(echo "$CHOICE" | sed 's/Enable //')
+        echo "Enabling $SOURCE wakeup source..."
+        echo "$SOURCE" | sudo tee /proc/acpi/wakeup > /dev/null
+        echo "${yellow}${b}$SOURCE enabled.${n} Changes take effect immediately."
+        echo "Note: This may cause instant wake issues if this source was problematic."
+        ;;
+      "Enable GPP0 Auto-fix Service")
+        sudo systemctl enable --now gigabyte-sleep-fix.service
+        echo "${green}${b}GPP0 auto-fix service enabled.${n}"
+        echo "GPP0 will be automatically disabled on each boot."
+        ;;
+      "Disable GPP0 Auto-fix Service")
+        sudo systemctl disable --now gigabyte-sleep-fix.service
+        echo "${red}${b}GPP0 auto-fix service disabled.${n}"
+        ;;
+      "Save Current Configuration")
+        echo "Saving current ACPI wakeup configuration..."
+        DISABLED_SOURCES=$(grep "\*disabled" /proc/acpi/wakeup | awk '{print $1}')
+        if [[ -n "$DISABLED_SOURCES" ]]; then
+          echo "$DISABLED_SOURCES" | sudo tee /etc/bazzite/acpi-wakeup-disabled.conf > /dev/null
+          sudo mkdir -p /etc/bazzite
+          echo "${green}${b}Configuration saved.${n} Disabled sources: $(echo $DISABLED_SOURCES | tr '\n' ' ')"
+          echo "Note: This is temporary storage. Use the GPP0 service for persistent GPP0 fixes."
+        else
+          echo "${yellow}No sources are currently disabled.${n}"
+        fi
+        ;;
+      "Restore Saved Configuration")
+        if [[ -f /etc/bazzite/acpi-wakeup-disabled.conf ]]; then
+          echo "Restoring saved ACPI wakeup configuration..."
+          while read -r source; do
+            [[ -n "$source" ]] && echo "$source" | sudo tee /proc/acpi/wakeup > /dev/null 2>&1
+          done < /etc/bazzite/acpi-wakeup-disabled.conf
+          RESTORED=$(cat /etc/bazzite/acpi-wakeup-disabled.conf | tr '\n' ' ')
+          echo "${green}${b}Configuration restored.${n} Disabled sources: $RESTORED"
+        else
+          echo "${yellow}No saved configuration found.${n}"
+        fi
+        ;;
+      "Show All Wakeup Sources")
+        echo ""
+        echo "${b}All ACPI Wakeup Sources:${n}"
+        cat /proc/acpi/wakeup
+        ;;
+      "Exit"|*)
+        echo "No changes made."
+        ;;
+    esac
